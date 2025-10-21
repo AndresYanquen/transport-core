@@ -1,0 +1,30 @@
+{
+  "name": "taxipostgres",
+  "version": "1.0.0",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "test": "echo \"No tests yet\"",
+    "migrate:make": "npx knex migrate:make",
+    "migrate:latest": "npx knex migrate:latest",
+    "migrate:rollback": "npx knex migrate:rollback",
+    "seed:run": "npx knex seed:run",
+    "seed:make": "npx knex seed:make"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "knex": "^3.1.0",
+    "nodemon": "^3.1.10"
+  }
+}
