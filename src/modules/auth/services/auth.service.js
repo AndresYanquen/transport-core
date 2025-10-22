@@ -7,6 +7,8 @@ const PASSWORD_SALT_ROUNDS = 12;
 const SESSION_TOKEN_BYTES = 32;
 const VERIFICATION_TOKEN_BYTES = 32;
 
+const allowedAccountTypes = ["client", "driver", "admin"];
+
 function generateToken(bytes = 32) {
   return crypto.randomBytes(bytes).toString("hex");
 }
@@ -22,7 +24,29 @@ async function registerUser({
   lastName,
   phoneNumber,
   username,
+  accountType = "client",
+  clientProfile = {},
+  driverProfile = {},
 }) {
+  const normalizedAccountType = allowedAccountTypes.includes(accountType)
+    ? accountType
+    : "client";
+
+  if (
+    normalizedAccountType === "driver" &&
+    (!driverProfile ||
+      !driverProfile.licenseNumber ||
+      !driverProfile.vehicleMake ||
+      !driverProfile.vehicleModel ||
+      !driverProfile.vehiclePlate)
+  ) {
+    const error = new Error(
+      "Driver registrations require licenseNumber, vehicleMake, vehicleModel, and vehiclePlate."
+    );
+    error.status = 400;
+    throw error;
+  }
+
   const passwordHash = await bcrypt.hash(password, PASSWORD_SALT_ROUNDS);
   const emailVerificationToken = generateToken(VERIFICATION_TOKEN_BYTES);
   const phoneVerificationToken = phoneNumber
@@ -31,6 +55,22 @@ async function registerUser({
 
   const createdAt = new Date();
 
+  const normalizedDriverProfile = driverProfile
+    ? {
+        ...driverProfile,
+        vehicleYear:
+          driverProfile.vehicleYear !== undefined && driverProfile.vehicleYear !== null
+            ? Number(driverProfile.vehicleYear)
+            : null,
+      }
+    : undefined;
+
+  const normalizedClientProfile = clientProfile
+    ? {
+        ...clientProfile,
+      }
+    : undefined;
+
   const userRow = await AuthModel.createUser({
     email,
     username,
@@ -38,12 +78,17 @@ async function registerUser({
     firstName,
     lastName,
     phoneNumber,
+    accountType: normalizedAccountType,
     emailVerificationToken: hashToken(emailVerificationToken),
     emailVerificationSentAt: createdAt,
     phoneVerificationToken: phoneVerificationToken
       ? hashToken(phoneVerificationToken)
       : null,
     phoneVerificationSentAt: phoneVerificationToken ? createdAt : null,
+    clientProfile:
+      normalizedAccountType === "client" ? normalizedClientProfile : undefined,
+    driverProfile:
+      normalizedAccountType === "driver" ? normalizedDriverProfile : undefined,
   });
 
   const user = AuthModel.toPublicUser(userRow);

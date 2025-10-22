@@ -22,6 +22,8 @@ Seed the database with a demo user (email `demo@example.com`, password `TestPass
 npm run seed:run
 ```
 
+Seed data creates an admin plus sample client (`client@example.com`) and driver (`driver@example.com`) accounts. All seeded users share the password `TestPassword123!`.
+
 The server listens on `http://localhost:3000` by default. Update `.env` to point at your PostgreSQL instance; the template is preconfigured for a local database on `localhost:5432` with user `andresyanquen` and password `12345`.
 
 ## Project Structure
@@ -46,8 +48,61 @@ migrations/          # Raw SQL/Knex schema migrations (e.g., users table)
 
 `auth` module:
 
-- `POST /api/auth/signup` – Hashes the password, stores the user in PostgreSQL, and returns verification tokens you can deliver via email/SMS.
-- `POST /api/auth/login` – Validates credentials against the database, updates `last_login_at`, and returns a session token placeholder.
+- `POST /api/auth/signup` – Hashes the password, stores the user in PostgreSQL (as a client or driver), inserts role-specific records, and returns verification tokens you can deliver via email/SMS.
+- `POST /api/auth/login` – Validates credentials against the database, updates `last_login_at`, and returns a session token placeholder along with profile data.
+
+### Sample Requests
+
+Client signup:
+
+```json
+POST /api/auth/signup
+{
+  "email": "newclient@example.com",
+  "password": "NewClientPass123!",
+  "firstName": "Nora",
+  "lastName": "Rider",
+  "phoneNumber": "+10000000010",
+  "accountType": "client",
+  "clientProfile": {
+    "defaultPaymentMethod": "card",
+    "preferredLanguage": "en"
+  }
+}
+```
+
+Driver signup:
+
+```json
+POST /api/auth/signup
+{
+  "email": "newdriver@example.com",
+  "password": "NewDriverPass123!",
+  "firstName": "Derek",
+  "lastName": "Driver",
+  "phoneNumber": "+10000000011",
+  "accountType": "driver",
+  "driverProfile": {
+    "licenseNumber": "DRV-567890",
+    "vehicleMake": "Honda",
+    "vehicleModel": "Civic",
+    "vehicleYear": 2021,
+    "vehicleColor": "Blue",
+    "vehiclePlate": "XYZ-789",
+    "vehicleType": "Sedan"
+  }
+}
+```
+
+Login (works for seeded accounts):
+
+```json
+POST /api/auth/login
+{
+  "email": "client@example.com",
+  "password": "TestPassword123!"
+}
+```
 
 `GET /health` is provided by the core app for health checks.
 
