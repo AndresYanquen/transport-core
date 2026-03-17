@@ -1,0 +1,486 @@
+{
+  "info": {
+    "name": "Taxi Backend API",
+    "_postman_id": "d1dd5d53-36d1-44c7-8e9f-9cf93e276c6d",
+    "description": "Collection covering the available endpoints exposed by the Taxi Backend service.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Returns `{ \"status\": \"ok\" }` when the service is running."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Signup - Client",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"newclient@example.com\",\n  \"password\": \"NewClientPass123!\",\n  \"firstName\": \"Nora\",\n  \"lastName\": \"Rider\",\n  \"phoneNumber\": \"+10000000010\",\n  \"accountType\": \"client\",\n  \"clientProfile\": {\n    \"defaultPaymentMethod\": \"card\",\n    \"preferredLanguage\": \"en\",\n    \"homeLocation\": {\n      \"lat\": 40.73061,\n      \"lng\": -73.935242\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/signup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "signup"
+              ]
+            },
+            "description": "Registers a new client account. Adjust the email before reusing the request."
+          },
+          "response": []
+        },
+        {
+          "name": "Signup - Driver",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"newdriver@example.com\",\n  \"password\": \"NewDriverPass123!\",\n  \"firstName\": \"Derek\",\n  \"lastName\": \"Driver\",\n  \"phoneNumber\": \"+10000000011\",\n  \"accountType\": \"driver\",\n  \"driverProfile\": {\n    \"licenseNumber\": \"DRV-567890\",\n    \"vehicleMake\": \"Honda\",\n    \"vehicleModel\": \"Civic\",\n    \"vehicleYear\": 2021,\n    \"vehicleColor\": \"Blue\",\n    \"vehiclePlate\": \"XYZ-789\",\n    \"vehicleType\": \"Sedan\",\n    \"currentLocation\": {\n      \"latitude\": 34.052235,\n      \"longitude\": -118.243683\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/signup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "signup"
+              ]
+            },
+            "description": "Registers a new driver account with the required vehicle profile details."
+          },
+          "response": []
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"client@example.com\",\n  \"password\": \"TestPassword123!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Authenticates a user (seed data uses `client@example.com` / `TestPassword123!`)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Rides",
+      "item": [
+        {
+          "name": "Create Ride",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientId\": \"{{clientId}}\",\n  \"pickupAddress\": \"350 5th Ave, New York, NY\",\n  \"dropoffAddress\": \"Times Square, New York, NY\",\n  \"pickupLocation\": {\n    \"lat\": 40.748817,\n    \"lng\": -73.985428\n  },\n  \"dropoffLocation\": {\n    \"lat\": 40.758,\n    \"lng\": -73.9855\n  },\n  \"serviceType\": \"standard\",\n  \"estimatedDistanceMeters\": 1800,\n  \"estimatedDurationSeconds\": 420,\n  \"estimatedFareAmount\": 15.25,\n  \"surgeMultiplier\": 1.2,\n  \"currency\": \"USD\",\n  \"paymentReference\": \"order-12345\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/rides",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "rides"
+              ]
+            },
+            "description": "Creates a new ride request for the specified client and locations."
+          },
+          "response": []
+        },
+        {
+          "name": "Assign Driver",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driverId\": \"{{driverId}}\",\n  \"radiusMeters\": 5000,\n  \"limit\": 3,\n  \"actorType\": \"system\",\n  \"actorId\": \"{{actorId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/rides/{{rideId}}/assign",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "rides",
+                "{{rideId}}",
+                "assign"
+              ]
+            },
+            "description": "Assigns a driver to a ride. Provide `driverId` for direct assignment or leave empty to auto-select."
+          },
+          "response": []
+        },
+        {
+          "name": "Driver Assignment Response",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driverId\": \"{{driverId}}\",\n  \"action\": \"accept\",\n  \"actorType\": \"driver\",\n  \"actorId\": \"{{driverId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/rides/{{rideId}}/driver-response",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "rides",
+                "{{rideId}}",
+                "driver-response"
+              ]
+            },
+            "description": "Allows the invited driver to accept or reject the assignment."
+          },
+          "response": []
+        },
+        {
+          "name": "Driver Progress Update",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driverId\": \"{{driverId}}\",\n  \"status\": \"completed\",\n  \"actualDistanceMeters\": 3200,\n  \"actualDurationSeconds\": 780,\n  \"finalFareAmount\": 22.5,\n  \"paymentReference\": \"txn-98765\",\n  \"surgeMultiplier\": 1.2,\n  \"pricingBreakdown\": {\n    \"baseFare\": 5,\n    \"distanceFare\": 12,\n    \"timeFare\": 5.5\n  },\n  \"payload\": {\n    \"tip\": 3\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/rides/{{rideId}}/driver-progress",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "rides",
+                "{{rideId}}",
+                "driver-progress"
+              ]
+            },
+            "description": "Updates the driver's progress through the ride lifecycle (en route, arrived, in_progress, completed, etc.)."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Ride Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"canceled_by_system\",\n  \"actorType\": \"system\",\n  \"actorId\": \"support-operator-1\",\n  \"payload\": {\n    \"reason\": \"Client requested cancellation\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/rides/{{rideId}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "rides",
+                "{{rideId}}",
+                "status"
+              ]
+            },
+            "description": "Transitions the ride to another status (e.g., canceled_by_system, completed)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Ride By ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/rides/{{rideId}}?includeEvents=true&eventsLimit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "rides",
+                "{{rideId}}"
+              ],
+              "query": [
+                {
+                  "key": "includeEvents",
+                  "value": "true"
+                },
+                {
+                  "key": "eventsLimit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Fetches the ride plus optional event history."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Drivers",
+      "item": [
+        {
+          "name": "Update Driver Location",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentLocation\": {\n    \"lat\": 34.052235,\n    \"lng\": -118.243683\n  },\n  \"heading\": 90,\n  \"speedKmh\": 35\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/drivers/{{driverId}}/location",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "drivers",
+                "{{driverId}}",
+                "location"
+              ]
+            },
+            "description": "Updates the driver's current position, heading, and speed."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Driver Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"online\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/drivers/{{driverId}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "drivers",
+                "{{driverId}}",
+                "status"
+              ]
+            },
+            "description": "Sets the driver's availability (offline, online, busy, unavailable)."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "authToken",
+      "value": ""
+    },
+    {
+      "key": "clientId",
+      "value": "00000000-0000-0000-0000-000000000001"
+    },
+    {
+      "key": "driverId",
+      "value": "00000000-0000-0000-0000-000000000002"
+    },
+    {
+      "key": "rideId",
+      "value": "00000000-0000-0000-0000-000000000003"
+    },
+    {
+      "key": "actorId",
+      "value": "system-user"
+    }
+  ]
+}

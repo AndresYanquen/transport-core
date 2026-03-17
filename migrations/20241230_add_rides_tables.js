@@ -25,8 +25,8 @@ exports.up = async function up(knex) {
       .defaultTo("standard");
     table.string("pickup_address", 255);
     table.string("dropoff_address", 255);
-    table.jsonb("pickup_location").defaultTo(knex.raw("'{}'::jsonb"));
-    table.jsonb("dropoff_location").defaultTo(knex.raw("'{}'::jsonb"));
+    table.specificType("pickup_point", "geography(Point, 4326)");
+    table.specificType("dropoff_point", "geography(Point, 4326)");
     table.integer("estimated_distance_meters");
     table.integer("estimated_duration_seconds");
     table.integer("actual_distance_meters");
@@ -55,6 +55,12 @@ exports.up = async function up(knex) {
     table.index(["driver_id"], "rides_driver_id_idx");
     table.index(["status"], "rides_status_idx");
     table.index(["requested_at"], "rides_requested_at_idx");
+    table.index(["pickup_point"], "rides_pickup_point_idx", {
+      indexType: "GIST",
+    });
+    table.index(["dropoff_point"], "rides_dropoff_point_idx", {
+      indexType: "GIST",
+    });
   });
 
   await knex.schema.raw(`

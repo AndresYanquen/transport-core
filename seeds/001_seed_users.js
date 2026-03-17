@@ -9,6 +9,8 @@ exports.seed = async function seed(knex) {
     PASSWORD_SALT_ROUNDS
   );
 
+  await knex("ride_events").del();
+  await knex("rides").del();
   await knex("drivers").del();
   await knex("clients").del();
   await knex("users").del();
@@ -43,6 +45,7 @@ exports.seed = async function seed(knex) {
     rating: 5,
     total_trips: 42,
     preferences: JSON.stringify({ wheelchairAccessible: false }),
+    home_location: knex.raw("ST_GeogFromText(?)", ["POINT(-74.0060 40.7128)"]),
     created_at: knex.fn.now(),
     updated_at: knex.fn.now(),
   });
@@ -83,6 +86,7 @@ exports.seed = async function seed(knex) {
     rating: 4.9,
     total_trips: 318,
     status: "online",
+    current_location: knex.raw("ST_GeogFromText(?)", ["POINT(-118.2437 34.0522)"]),
     onboarded_at: knex.fn.now(),
     created_at: knex.fn.now(),
     updated_at: knex.fn.now(),

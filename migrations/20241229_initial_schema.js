@@ -3,6 +3,7 @@
  */
 exports.up = async function up(knex) {
   await knex.raw('CREATE EXTENSION IF NOT EXISTS "pgcrypto";');
+  await knex.raw('CREATE EXTENSION IF NOT EXISTS "postgis";');
 
   await knex.schema.createTable("users", (table) => {
     table
@@ -75,6 +76,7 @@ exports.up = async function up(knex) {
     table.decimal("rating", 3, 2).defaultTo(0);
     table.integer("total_trips").defaultTo(0);
     table.jsonb("preferences").defaultTo(knex.raw("'{}'::jsonb"));
+    table.specificType("home_location", "geography(Point, 4326)");
     table.timestamp("created_at").notNullable().defaultTo(knex.fn.now());
     table.timestamp("updated_at").notNullable().defaultTo(knex.fn.now());
   });
@@ -100,6 +102,7 @@ exports.up = async function up(knex) {
       .notNullable()
       .defaultTo("offline");
     table.jsonb("documents").defaultTo(knex.raw("'{}'::jsonb"));
+    table.specificType("current_location", "geography(Point, 4326)");
     table.timestamp("onboarded_at").defaultTo(knex.fn.now());
     table.timestamp("created_at").notNullable().defaultTo(knex.fn.now());
     table.timestamp("updated_at").notNullable().defaultTo(knex.fn.now());
@@ -125,12 +128,29 @@ exports.up = async function up(knex) {
     FOR EACH ROW
     EXECUTE FUNCTION update_timestamp();
   `);
+  await knex.schema.raw(`
+    CREATE INDEX clients_home_location_idx
+    ON clients
+    USING GIST (home_location);
+  `);
+
+  await knex.schema.raw(`
+    CREATE INDEX drivers_current_location_idx
+    ON drivers
+    USING GIST (current_location);
+  `);
 };
 
 /**
  * @param {import('knex').Knex} knex
  */
 exports.down = async function down(knex) {
+  await knex.schema.raw(`
+    DROP INDEX IF EXISTS drivers_current_location_idx;
+  `);
+  await knex.schema.raw(`
+    DROP INDEX IF EXISTS clients_home_location_idx;
+  `);
   await knex.schema.raw(`
     DROP TRIGGER IF EXISTS set_drivers_updated_at ON drivers;
   `);

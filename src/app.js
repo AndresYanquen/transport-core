@@ -2,14 +2,34 @@ const express = require("express");
 const cors = require("cors");
 
 const { pool } = require("./config/database");
+const { env } = require("./config");
 const authRoutes = require("./modules/auth/routes/auth.routes");
+const rideRoutes = require("./modules/rides/routes/ride.routes");
+const driverRoutes = require("./modules/drivers/routes/driver.routes");
+const { authenticate } = require("./modules/auth/middleware/authentication.middleware");
 
 const app = express();
 
-app.use(cors());
+const allowedOrigins = env.cors.allowedOrigins || [];
+const allowAllOrigins = allowedOrigins.includes("*");
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || allowAllOrigins || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(null, false);
+  },
+  credentials: true,
+  optionsSuccessStatus: 204,
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 app.use("/api/auth", authRoutes);
+app.use("/api/rides", authenticate, rideRoutes);
+app.use("/api/drivers", authenticate, driverRoutes);
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });

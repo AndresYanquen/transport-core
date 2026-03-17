@@ -42,7 +42,9 @@ const baseUserSelect = `
     d.documents AS driver_documents,
     d.onboarded_at AS driver_onboarded_at,
     d.created_at AS driver_created_at,
-    d.updated_at AS driver_updated_at
+    d.updated_at AS driver_updated_at,
+    ST_AsGeoJSON(c.home_location)::json AS client_home_location,
+    ST_AsGeoJSON(d.current_location)::json AS driver_current_location
   FROM users u
   LEFT JOIN clients c ON c.user_id = u.id
   LEFT JOIN drivers d ON d.user_id = u.id
@@ -140,6 +142,13 @@ class AuthModel {
       const userId = userInsert.rows[0].id;
 
       if (accountType === "driver" && driverProfile) {
+        const locationLat = driverProfile.currentLocationLatLng
+          ? driverProfile.currentLocationLatLng.lat
+          : null;
+        const locationLng = driverProfile.currentLocationLatLng
+          ? driverProfile.currentLocationLatLng.lng
+          : null;
+
         await client.query(
           `
             INSERT INTO drivers (
@@ -151,9 +160,28 @@ class AuthModel {
               vehicle_color,
               vehicle_plate,
               vehicle_type,
-              documents
+              documents,
+              current_location
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            VALUES (
+              $1,
+              $2,
+              $3,
+              $4,
+              $5,
+              $6,
+              $7,
+              $8,
+              $9,
+              CASE
+                WHEN $10::double precision IS NULL OR $11::double precision IS NULL
+                  THEN NULL
+                ELSE ST_SetSRID(
+                  ST_MakePoint($11::double precision, $10::double precision),
+                  4326
+                )::geography
+              END
+            )
           `,
           [
             userId,
@@ -165,6 +193,8 @@ class AuthModel {
             driverProfile.vehiclePlate,
             driverProfile.vehicleType ?? null,
             JSON.stringify(driverProfile.documents ?? {}),
+            locationLat,
+            locationLng,
           ]
         );
       }
@@ -176,15 +206,23 @@ class AuthModel {
               user_id,
               default_payment_method,
               preferred_language,
-              preferences
+              preferences,
+              home_location
             )
-            VALUES ($1, $2, $3, $4)
+            VALUES (
+              $1,
+              $2,
+              $3,
+              $4,
+              CASE WHEN $5::text IS NULL THEN NULL ELSE ST_GeogFromText($5::text) END
+            )
           `,
           [
             userId,
             clientProfile.defaultPaymentMethod ?? null,
             clientProfile.preferredLanguage ?? null,
             JSON.stringify(clientProfile.preferences ?? {}),
+            clientProfile.homeLocationWkt ?? null,
           ]
         );
       }
@@ -238,13 +276,15 @@ class AuthModel {
       row.default_payment_method !== null ||
       row.preferred_language !== null ||
       row.client_rating !== null ||
-      row.client_total_trips !== null
+      row.client_total_trips !== null ||
+      row.client_home_location !== null
         ? {
             defaultPaymentMethod: row.default_payment_method,
             preferredLanguage: row.preferred_language,
             rating: row.client_rating,
             totalTrips: row.client_total_trips,
             preferences: row.client_preferences,
+            homeLocation: row.client_home_location,
             createdAt: row.client_created_at,
             updatedAt: row.client_updated_at,
           }
@@ -263,6 +303,7 @@ class AuthModel {
           totalTrips: row.driver_total_trips,
           status: row.driver_status,
           documents: row.driver_documents,
+          currentLocation: row.driver_current_location,
           onboardedAt: row.driver_onboarded_at,
           createdAt: row.driver_created_at,
           updatedAt: row.driver_updated_at,

@@ -2,12 +2,60 @@ const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 
 const AuthModel = require("../models/auth.model");
+const { env } = require("../../../config");
+const { signJwt } = require("../utils/jwt");
 
 const PASSWORD_SALT_ROUNDS = 12;
-const SESSION_TOKEN_BYTES = 32;
 const VERIFICATION_TOKEN_BYTES = 32;
 
 const allowedAccountTypes = ["client", "driver", "admin"];
+
+function toWktPoint(location) {
+  if (!location) return null;
+
+  const { lat, latitude, lng, lon, longitude } = location;
+  const latitudeValue = typeof latitude === "number" ? latitude : lat;
+  const longitudeValue = typeof longitude === "number"
+    ? longitude
+    : typeof lng === "number"
+    ? lng
+    : lon;
+
+  if (
+    typeof latitudeValue !== "number" ||
+    typeof longitudeValue !== "number" ||
+    Number.isNaN(latitudeValue) ||
+    Number.isNaN(longitudeValue)
+  ) {
+    return null;
+  }
+
+  return `SRID=4326;POINT(${longitudeValue} ${latitudeValue})`;
+}
+
+function extractLatLng(location) {
+  if (!location) return null;
+
+  const { lat, latitude, lng, lon, longitude } = location;
+  const latValue = typeof latitude === "number" ? latitude : lat;
+  const lngValue =
+    typeof longitude === "number"
+      ? longitude
+      : typeof lng === "number"
+      ? lng
+      : lon;
+
+  if (
+    typeof latValue === "number" &&
+    typeof lngValue === "number" &&
+    Number.isFinite(latValue) &&
+    Number.isFinite(lngValue)
+  ) {
+    return { lat: latValue, lng: lngValue };
+  }
+
+  return null;
+}
 
 function generateToken(bytes = 32) {
   return crypto.randomBytes(bytes).toString("hex");
@@ -62,12 +110,15 @@ async function registerUser({
           driverProfile.vehicleYear !== undefined && driverProfile.vehicleYear !== null
             ? Number(driverProfile.vehicleYear)
             : null,
+        currentLocationWkt: toWktPoint(driverProfile.currentLocation),
+        currentLocationLatLng: extractLatLng(driverProfile.currentLocation),
       }
     : undefined;
 
   const normalizedClientProfile = clientProfile
     ? {
         ...clientProfile,
+        homeLocationWkt: toWktPoint(clientProfile.homeLocation),
       }
     : undefined;
 
@@ -106,7 +157,7 @@ async function loginUser({ email, password }) {
   const userRow = await AuthModel.findByEmail(email);
 
   if (!userRow) {
-    const error = new Error("Invalid email or password.");
+    const error = new Error("Contraseña o correo inválidos.");
     error.status = 401;
     throw error;
   }
@@ -117,18 +168,32 @@ async function loginUser({ email, password }) {
   );
 
   if (!passwordMatches) {
-    const error = new Error("Invalid email or password.");
+    const error = new Error("Contraseña o correo inválidos.");
     error.status = 401;
     throw error;
   }
 
   const updatedRow = await AuthModel.updateLastLogin(userRow.id);
 
-  const sessionToken = generateToken(SESSION_TOKEN_BYTES);
+  const user = AuthModel.toPublicUser(updatedRow ?? userRow);
+
+  const accessToken = signJwt(
+    {
+      sub: user.id,
+      role: user.role,
+      email: user.email,
+      type: "access",
+    },
+    {
+      secret: env.security.jwtSecret,
+      expiresInSeconds: env.security.jwtExpiresInSeconds,
+    }
+  );
 
   return {
-    user: AuthModel.toPublicUser(updatedRow ?? userRow),
-    token: sessionToken,
+    user,
+    token: accessToken,
+    expiresIn: env.security.jwtExpiresInSeconds,
   };
 }
 
