@@ -10,7 +10,10 @@ const {
   isKnownStatus,
 } = require("../utils/ride-state-machine");
 const DriverService = require("../../drivers/services/driver.service");
-const { RideInviteStatus } = require("../constants/ride-invite-status");
+const {
+  RideInviteStatus,
+  RIDE_INVITE_STATUS_VALUES,
+} = require("../constants/ride-invite-status");
 const { applyTransitionSideEffects } = require("./ride-effects.service");
 
 const pool = RideModel.getPool();
@@ -931,6 +934,70 @@ async function listRides(filters = {}, viewer = null) {
   };
 }
 
+async function listDriverInvites(filters = {}, viewer = null) {
+  const role = String(viewer?.role || "").toLowerCase();
+  const normalizedFilters = { ...filters };
+
+  let resolvedDriverId = normalizedFilters.driverId;
+  if (role === "driver") {
+    resolvedDriverId = viewer.id;
+  }
+
+  if (!resolvedDriverId) {
+    throw createHttpError(400, "driverId is required for this query.");
+  }
+
+  let statuses;
+  if (normalizedFilters.statuses) {
+    statuses = String(normalizedFilters.statuses)
+      .split(",")
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean);
+
+    const invalidStatuses = statuses.filter(
+      (status) => !RIDE_INVITE_STATUS_VALUES.includes(status)
+    );
+
+    if (invalidStatuses.length > 0) {
+      throw createHttpError(
+        400,
+        `Invalid invite status value(s): ${invalidStatuses.join(", ")}.`
+      );
+    }
+  } else {
+    statuses = [RideInviteStatus.PENDING];
+  }
+
+  const limit = normalizedFilters.limit !== undefined
+    ? Number(normalizedFilters.limit)
+    : 25;
+  const offset = normalizedFilters.offset !== undefined
+    ? Number(normalizedFilters.offset)
+    : 0;
+
+  if (!Number.isInteger(limit) || limit <= 0 || limit > 200) {
+    throw createHttpError(400, "limit must be an integer between 1 and 200.");
+  }
+
+  if (!Number.isInteger(offset) || offset < 0) {
+    throw createHttpError(400, "offset must be a non-negative integer.");
+  }
+
+  const rows = await RideModel.listDriverInvitesForDriver({
+    driverId: resolvedDriverId,
+    statuses,
+    limit,
+    offset,
+  });
+
+  return {
+    invites: rows.map((row) => ({
+      ...row.invite,
+      ride: row.ride,
+    })),
+  };
+}
+
 async function getRideById(rideId, { includeEvents = false, eventsLimit = 50 } = {}) {
   if (!rideId) {
     throw createHttpError(400, "rideId is required.");
@@ -972,6 +1039,7 @@ module.exports = {
   systemCancelRide,
   listRides,
   getRideById,
+  listDriverInvites,
   __private: {
     buildTransitionPlan,
     validateTransitionPayload,

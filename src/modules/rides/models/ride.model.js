@@ -464,6 +464,62 @@ class RideModel {
     return rows.map(RideModel.mapInviteRow);
   }
 
+  static async listDriverInvitesForDriver(
+    {
+      driverId,
+      statuses,
+      limit = 25,
+      offset = 0,
+    } = {},
+    dbClient
+  ) {
+    const executor = getExecutor(dbClient);
+    const params = [driverId];
+    const conditions = ["i.driver_id = $1"];
+
+    if (statuses && statuses.length) {
+      params.push(statuses);
+      conditions.push(`i.status = ANY($${params.length}::text[])`);
+    }
+
+    params.push(limit);
+    const limitIndex = params.length;
+    params.push(offset);
+    const offsetIndex = params.length;
+
+    const { rows } = await executor.query(
+      `
+        SELECT
+          i.id AS invite_id,
+          i.ride_id AS invite_ride_id,
+          i.driver_id AS invite_driver_id,
+          i.status AS invite_status,
+          i.invited_at AS invite_invited_at,
+          i.responded_at AS invite_responded_at,
+          ${BASE_RIDE_FIELDS}
+        FROM ride_driver_invites i
+        JOIN rides r ON r.id = i.ride_id
+        WHERE ${conditions.join(" AND ")}
+        ORDER BY i.invited_at DESC, i.id DESC
+        LIMIT $${limitIndex}
+        OFFSET $${offsetIndex}
+      `,
+      params
+    );
+
+    return rows.map((row) => ({
+      invite: RideModel.mapInviteRow({
+        id: row.invite_id,
+        ride_id: row.invite_ride_id,
+        driver_id: row.invite_driver_id,
+        status: row.invite_status,
+        invited_at: row.invite_invited_at,
+        responded_at: row.invite_responded_at,
+      }),
+      ride: RideModel.mapRideRow(row),
+    }));
+  }
+
   static async getDriverInvite(dbClient, rideId, driverId, { forUpdate = false } = {}) {
     const executor = getExecutor(dbClient);
     const { rows } = await executor.query(

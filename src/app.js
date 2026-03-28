@@ -31,8 +31,22 @@ app.use("/api/auth", authRoutes);
 app.use("/api/rides", authenticate, rideRoutes);
 app.use("/api/drivers", authenticate, driverRoutes);
 
-app.get("/health", (_req, res) => {
-  res.json({ status: "ok" });
+app.get("/health", async (_req, res) => {
+  try {
+    await pool.query("SELECT 1");
+    res.status(200).json({
+      status: "ok",
+      db: "ok",
+      env: env.nodeEnv,
+    });
+  } catch (error) {
+    console.error("Health check database probe failed:", error);
+    res.status(503).json({
+      status: "error",
+      db: "unreachable",
+      env: env.nodeEnv,
+    });
+  }
 });
 
 (async () => {

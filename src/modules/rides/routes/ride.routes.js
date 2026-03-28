@@ -4,6 +4,8 @@ const RideMiddleware = require("../middleware/rides.middleware");
 const { authorizeRoles } = require("../../auth/middleware/authentication.middleware");
 
 const router = Router();
+const uuidV4LikeRegex =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
 
 function normalizeRole(role = "") {
   return role.toLowerCase();
@@ -86,6 +88,16 @@ function applyActorMetadata(req, _res, next) {
   next();
 }
 
+function ensureValidRideId(req, res, next) {
+  const { rideId } = req.params;
+
+  if (!uuidV4LikeRegex.test(String(rideId || ""))) {
+    return res.status(400).json({ message: "rideId must be a valid UUID." });
+  }
+
+  next();
+}
+
 router.post(
   "/",
   authorizeRoles("client", "admin"),
@@ -98,15 +110,22 @@ router.get(
   authorizeRoles("client", "driver", "admin"),
   RideController.listRides
 );
+router.get(
+  "/driver-invites",
+  authorizeRoles("driver", "admin"),
+  RideController.listDriverInvites
+);
 router.patch(
   "/:rideId/assign",
   authorizeRoles("admin"),
+  ensureValidRideId,
   RideMiddleware.assignDriver,
   RideController.assignDriver
 );
 router.patch(
   "/:rideId/driver-response",
   authorizeRoles("driver"),
+  ensureValidRideId,
   enforceDriverIdentity,
   RideMiddleware.driverResponse,
   RideController.respondDriverAssignment
@@ -114,6 +133,7 @@ router.patch(
 router.patch(
   "/:rideId/driver-progress",
   authorizeRoles("driver", "admin"),
+  ensureValidRideId,
   enforceDriverIdentity,
   RideMiddleware.driverProgress,
   RideController.driverProgress
@@ -121,6 +141,7 @@ router.patch(
 router.patch(
   "/:rideId/status",
   authorizeRoles("client", "driver", "admin"),
+  ensureValidRideId,
   applyActorMetadata,
   RideMiddleware.updateRideStatus,
   RideController.updateRideStatus
@@ -128,6 +149,7 @@ router.patch(
 router.patch(
   "/:rideId/cancel",
   authorizeRoles("client", "driver", "admin"),
+  ensureValidRideId,
   applyActorMetadata,
   RideMiddleware.cancelRide,
   RideController.cancelRide
@@ -135,6 +157,7 @@ router.patch(
 router.patch(
   "/:rideId/no-show",
   authorizeRoles("driver", "admin"),
+  ensureValidRideId,
   enforceDriverIdentity,
   RideMiddleware.markNoShow,
   RideController.markNoShow
@@ -142,6 +165,7 @@ router.patch(
 router.patch(
   "/:rideId/requeue",
   authorizeRoles("admin"),
+  ensureValidRideId,
   applyActorMetadata,
   RideMiddleware.requeueRide,
   RideController.requeueRide
@@ -149,6 +173,7 @@ router.patch(
 router.patch(
   "/:rideId/system-cancel",
   authorizeRoles("admin"),
+  ensureValidRideId,
   applyActorMetadata,
   RideMiddleware.systemCancelRide,
   RideController.systemCancelRide
@@ -156,6 +181,7 @@ router.patch(
 router.get(
   "/:rideId",
   authorizeRoles("client", "driver", "admin"),
+  ensureValidRideId,
   RideController.getRide
 );
 

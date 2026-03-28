@@ -13,17 +13,26 @@ function parseCsv(value, fallback = []) {
     .filter(Boolean);
 }
 
-const defaultCorsOrigins = [
-  "http://localhost:3000",
-  "http://localhost:3001",
-  "http://localhost:5173",
-  "http://127.0.0.1:3000",
-  "http://127.0.0.1:3001",
-  "http://127.0.0.1:5173",
-];
+function getDefaultCorsOrigins(nodeEnv) {
+  // In production, require explicit CORS origins from env vars.
+  if (nodeEnv === "production") {
+    return [];
+  }
+
+  return [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+    "http://127.0.0.1:5173",
+  ];
+}
+
+const nodeEnv = process.env.NODE_ENV || "development";
 
 const env = {
-  nodeEnv: process.env.NODE_ENV || "development",
+  nodeEnv,
   port: Number(process.env.PORT || 3000),
   db: {
     host: process.env.DB_HOST || "localhost",
@@ -35,7 +44,7 @@ const env = {
   cors: {
     allowedOrigins: parseCsv(
       process.env.CORS_ALLOWED_ORIGINS,
-      defaultCorsOrigins
+      getDefaultCorsOrigins(nodeEnv)
     ),
   },
   security: {

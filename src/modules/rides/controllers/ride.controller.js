@@ -59,6 +59,15 @@ async function listRides(req, res, next) {
   }
 }
 
+async function listDriverInvites(req, res, next) {
+  try {
+    const result = await RideService.listDriverInvites(req.query, req.user);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function assignDriver(req, res, next) {
   try {
     const { driverId, radiusMeters, limit, actorType, actorId } = req.body;
@@ -201,6 +210,7 @@ async function systemCancelRide(req, res, next) {
 module.exports = {
   createRide,
   listRides,
+  listDriverInvites,
   updateRideStatus,
   getRide,
   assignDriver,
