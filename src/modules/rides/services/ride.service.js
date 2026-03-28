@@ -394,6 +394,9 @@ async function createRide({
   actorType = RideActorType.CLIENT,
   actorId,
   metadata,
+  autoAssign = true,
+  autoAssignRadiusMeters = 5000,
+  autoAssignLimit = 5,
 }) {
   if (!clientId) {
     throw createHttpError(400, "clientId is required to create a ride.");
@@ -447,10 +450,36 @@ async function createRide({
 
     await dbClient.query("COMMIT");
 
-    return {
+    const baseResult = {
       ride: RideModel.mapRideRow(rideRow),
       event: RideModel.mapEventRow(eventRow),
     };
+
+    if (!autoAssign) {
+      return baseResult;
+    }
+
+    try {
+      const assignment = await assignDriver({
+        rideId: rideRow.id,
+        radiusMeters: autoAssignRadiusMeters,
+        limit: autoAssignLimit,
+        actorType: RideActorType.SYSTEM,
+        actorId,
+        allowNoCandidates: true,
+      });
+
+      return {
+        ...baseResult,
+        assignment,
+      };
+    } catch (assignmentError) {
+      return {
+        ...baseResult,
+        assignment: null,
+        assignmentError: assignmentError.message,
+      };
+    }
   } catch (error) {
     await dbClient.query("ROLLBACK");
     throw error;
@@ -466,6 +495,7 @@ async function assignDriver({
   limit = 5,
   actorType,
   actorId,
+  allowNoCandidates = false,
 }) {
   if (!rideId) {
     throw createHttpError(400, "rideId is required to assign a driver.");
@@ -553,7 +583,9 @@ async function assignDriver({
       });
 
       if (!candidates.length) {
-        throw createHttpError(404, "No available drivers found near pickup location.");
+        if (!allowNoCandidates) {
+          throw createHttpError(404, "No available drivers found near pickup location.");
+        }
       }
 
       candidates.forEach((candidate) => {
@@ -575,6 +607,18 @@ async function assignDriver({
         actorId: actorId ?? null,
         payload: {
           invitedDrivers: newDriverIds,
+        },
+      });
+    } else if (allowNoCandidates) {
+      invitationEvent = await RideModel.insertRideEvent(dbClient, {
+        rideId,
+        status: RideStatus.PENDING_DRIVER,
+        actorType: normalizedActorType,
+        actorId: actorId ?? null,
+        payload: {
+          invitedDrivers: [],
+          matchingAttempted: true,
+          noCandidatesFound: true,
         },
       });
     }

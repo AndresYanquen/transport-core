@@ -30,11 +30,32 @@ async function processRideTimeouts({
   const results = [];
 
   for (const ride of pendingDriverRides) {
+    const retryResult = await RideService.assignDriver({
+      rideId: ride.id,
+      actorType: RideActorType.SYSTEM,
+      actorId,
+      allowNoCandidates: true,
+    });
+
+    if (retryResult.invites && retryResult.invites.length > 0) {
+      results.push({
+        action: "pending_driver_retry",
+        ride: retryResult.ride,
+        invitesCount: retryResult.invites.length,
+        event: retryResult.event,
+      });
+      continue;
+    }
+
     results.push(
       await RideService.systemCancelRide({
         rideId: ride.id,
         actorId,
-        payload: { source: "timeout_job", timedOutStatus: RideStatus.PENDING_DRIVER },
+        payload: {
+          source: "timeout_job",
+          timedOutStatus: RideStatus.PENDING_DRIVER,
+          matchingRetried: true,
+        },
         cancellationReason: "no_driver_accepted_in_time",
       })
     );
