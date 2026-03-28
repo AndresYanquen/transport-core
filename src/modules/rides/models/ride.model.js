@@ -496,9 +496,12 @@ class RideModel {
           i.status AS invite_status,
           i.invited_at AS invite_invited_at,
           i.responded_at AS invite_responded_at,
-          ${BASE_RIDE_FIELDS}
+          r.*
         FROM ride_driver_invites i
-        JOIN rides r ON r.id = i.ride_id
+        JOIN (
+          SELECT ${BASE_RIDE_FIELDS}
+          FROM rides
+        ) r ON r.id = i.ride_id
         WHERE ${conditions.join(" AND ")}
         ORDER BY i.invited_at DESC, i.id DESC
         LIMIT $${limitIndex}
