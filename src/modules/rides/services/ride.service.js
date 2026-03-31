@@ -49,6 +49,19 @@ function normalizeCurrency(currency) {
   return currency.trim().toUpperCase();
 }
 
+function normalizePaymentReference(paymentReference) {
+  if (paymentReference === undefined || paymentReference === null) {
+    return null;
+  }
+
+  if (typeof paymentReference !== "string") {
+    throw createHttpError(400, "paymentReference must be a string when provided.");
+  }
+
+  const trimmed = paymentReference.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function normalizeLocationInput(label, value, { required = true } = {}) {
   if (!value) {
     if (required) {
@@ -278,7 +291,7 @@ function buildTransitionPlan(currentRow, {
   }
 
   if (paymentReference !== undefined) {
-    updateFields.payment_reference = paymentReference;
+    updateFields.payment_reference = normalizePaymentReference(paymentReference);
   }
 
   if (surge !== undefined) {
@@ -807,7 +820,7 @@ async function driverProgress({
       actualDistanceMeters,
       actualDurationSeconds,
       finalFareAmount,
-      paymentReference,
+      paymentReference: normalizePaymentReference(paymentReference),
       surgeMultiplier,
       pricingBreakdown,
     });
