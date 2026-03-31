@@ -173,10 +173,10 @@ class RideModel {
           $14,
           $15,
           $16,
+          NULL,
           COALESCE($17::jsonb, '{}'::jsonb),
           $18,
-          $19,
-          $20
+          $19
         )
         RETURNING ${BASE_RIDE_FIELDS}
       `,
@@ -197,7 +197,6 @@ class RideModel {
         finalFare,
         surge,
         currency ?? "USD",
-        paymentReference ?? null,
         pricingBreakdown ? JSON.stringify(pricingBreakdown) : null,
         cancellationReason ?? null,
         scheduledAt ?? null,
