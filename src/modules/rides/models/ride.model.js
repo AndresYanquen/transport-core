@@ -349,6 +349,22 @@ class RideModel {
     return {
       id: row.id,
       clientId: row.client_id,
+      passenger:
+        row.client_first_name !== undefined ||
+        row.client_last_name !== undefined ||
+        row.client_email !== undefined ||
+        row.client_phone_number !== undefined
+          ? {
+              firstName: row.client_first_name ?? null,
+              lastName: row.client_last_name ?? null,
+              fullName: [row.client_first_name, row.client_last_name]
+                .filter(Boolean)
+                .join(" ")
+                .trim() || null,
+              email: row.client_email ?? null,
+              phoneNumber: row.client_phone_number ?? null,
+            }
+          : null,
       driverId: row.driver_id,
       status: row.status,
       serviceType: row.service_type,
@@ -495,12 +511,17 @@ class RideModel {
           i.status AS invite_status,
           i.invited_at AS invite_invited_at,
           i.responded_at AS invite_responded_at,
-          r.*
+          r.*,
+          cu.first_name AS client_first_name,
+          cu.last_name AS client_last_name,
+          cu.email AS client_email,
+          cu.phone_number AS client_phone_number
         FROM ride_driver_invites i
         JOIN (
           SELECT ${BASE_RIDE_FIELDS}
           FROM rides
         ) r ON r.id = i.ride_id
+        JOIN users cu ON cu.id = r.client_id
         WHERE ${conditions.join(" AND ")}
         ORDER BY i.invited_at DESC, i.id DESC
         LIMIT $${limitIndex}
