@@ -617,6 +617,7 @@ class RideModel {
       status,
       limit = 25,
       offset = 0,
+      includePassenger = false,
     } = filters;
 
     const conditions = [];
@@ -646,14 +647,33 @@ class RideModel {
       ? `WHERE ${conditions.join(" AND ")}`
       : "";
 
+    const passengerSelect = includePassenger
+      ? `,
+          c.first_name AS client_first_name,
+          c.last_name AS client_last_name,
+          c.email AS client_email,
+          c.phone_number AS client_phone_number`
+      : "";
+
+    const passengerJoin = includePassenger
+      ? "LEFT JOIN users c ON c.id = r.client_id"
+      : "";
+
     const { rows } = await executor.query(
       `
-        SELECT ${BASE_RIDE_FIELDS}
-        FROM rides
-        ${whereClause}
-        ORDER BY requested_at DESC, created_at DESC
-        LIMIT $${limitIndex}
-        OFFSET $${offsetIndex}
+        SELECT
+          r.*
+          ${passengerSelect}
+        FROM (
+          SELECT ${BASE_RIDE_FIELDS}
+          FROM rides
+          ${whereClause}
+          ORDER BY requested_at DESC, created_at DESC
+          LIMIT $${limitIndex}
+          OFFSET $${offsetIndex}
+        ) r
+        ${passengerJoin}
+        ORDER BY r.requested_at DESC, r.created_at DESC
       `,
       params
     );

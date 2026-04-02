@@ -985,6 +985,11 @@ async function listRides(filters = {}, viewer = null) {
     normalizedFilters.offset = Number(normalizedFilters.offset);
   }
 
+  if (normalizedFilters.includePassenger !== undefined) {
+    const includePassengerRaw = String(normalizedFilters.includePassenger).toLowerCase();
+    normalizedFilters.includePassenger = ["1", "true", "yes"].includes(includePassengerRaw);
+  }
+
   const rows = await RideModel.listRides(normalizedFilters);
   return {
     rides: rows.map(RideModel.mapRideRow),
