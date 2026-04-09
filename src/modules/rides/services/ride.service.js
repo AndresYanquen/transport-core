@@ -1060,12 +1060,17 @@ async function listDriverInvites(filters = {}, viewer = null) {
   };
 }
 
-async function getRideById(rideId, { includeEvents = false, eventsLimit = 50 } = {}) {
+async function getRideById(
+  rideId,
+  { includeEvents = false, includeDriver = false, eventsLimit = 50 } = {}
+) {
   if (!rideId) {
     throw createHttpError(400, "rideId is required.");
   }
 
-  const rideRow = await RideModel.getRideById(rideId);
+  const rideRow = await RideModel.getRideById(rideId, {
+    includeDriver,
+  });
 
   if (!rideRow) {
     throw createHttpError(404, `Ride ${rideId} not found.`);

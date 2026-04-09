@@ -12,10 +12,29 @@ const app = express();
 
 const allowedOrigins = env.cors.allowedOrigins || [];
 const allowAllOrigins = allowedOrigins.includes("*");
+const allowLocalhostTemporarily = Boolean(env.cors.allowLocalhostTemporarily);
+
+function isLocalhostOrigin(origin) {
+  if (!origin) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(origin);
+    return parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+  } catch (_error) {
+    return false;
+  }
+}
 
 const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin || allowAllOrigins || allowedOrigins.includes(origin)) {
+    if (
+      !origin ||
+      allowAllOrigins ||
+      allowedOrigins.includes(origin) ||
+      (allowLocalhostTemporarily && isLocalhostOrigin(origin))
+    ) {
       return callback(null, true);
     }
     return callback(null, false);

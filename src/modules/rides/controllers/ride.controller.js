@@ -30,17 +30,22 @@ async function updateRideStatus(req, res, next) {
 
 async function getRide(req, res, next) {
   try {
-    const { includeEvents, eventsLimit } = req.query;
+    const { includeEvents, includeDriver, eventsLimit } = req.query;
 
     const includeEventsFlag =
       typeof includeEvents === "string"
         ? ["true", "1", "yes"].includes(includeEvents.toLowerCase())
         : Boolean(includeEvents);
+    const includeDriverFlag =
+      typeof includeDriver === "string"
+        ? ["true", "1", "yes"].includes(includeDriver.toLowerCase())
+        : Boolean(includeDriver);
 
     const limit = eventsLimit ? Number(eventsLimit) : undefined;
 
     const result = await RideService.getRideById(req.params.rideId, {
       includeEvents: includeEventsFlag,
+      includeDriver: includeDriverFlag,
       eventsLimit: limit,
     });
 

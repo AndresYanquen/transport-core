@@ -234,13 +234,41 @@ class RideModel {
     return rows[0] ?? null;
   }
 
-  static async getRideById(rideId, dbClient) {
+  static async getRideById(rideId, { includeDriver = false, dbClient } = {}) {
     const executor = getExecutor(dbClient);
+    const driverSelect = includeDriver
+      ? `,
+          du.first_name AS driver_first_name,
+          du.last_name AS driver_last_name,
+          du.email AS driver_email,
+          du.phone_number AS driver_phone_number,
+          d.vehicle_make AS driver_vehicle_make,
+          d.vehicle_model AS driver_vehicle_model,
+          d.vehicle_year AS driver_vehicle_year,
+          d.vehicle_color AS driver_vehicle_color,
+          d.vehicle_plate AS driver_vehicle_plate,
+          d.vehicle_type AS driver_vehicle_type,
+          d.status AS driver_status`
+      : "";
+
+    const driverJoin = includeDriver
+      ? `
+        LEFT JOIN drivers d ON d.user_id = r.driver_id
+        LEFT JOIN users du ON du.id = d.user_id
+      `
+      : "";
+
     const { rows } = await executor.query(
       `
-        SELECT ${BASE_RIDE_FIELDS}
-        FROM rides
-        WHERE id = $1
+        SELECT
+          r.*
+          ${driverSelect}
+        FROM (
+          SELECT ${BASE_RIDE_FIELDS}
+          FROM rides
+        ) r
+        ${driverJoin}
+        WHERE r.id = $1
       `,
       [rideId]
     );
@@ -363,6 +391,30 @@ class RideModel {
                 .trim() || null,
               email: row.client_email ?? null,
               phoneNumber: row.client_phone_number ?? null,
+            }
+          : null,
+      driver:
+        row.driver_first_name !== undefined ||
+        row.driver_last_name !== undefined ||
+        row.driver_email !== undefined ||
+        row.driver_phone_number !== undefined ||
+        row.driver_vehicle_plate !== undefined
+          ? {
+              firstName: row.driver_first_name ?? null,
+              lastName: row.driver_last_name ?? null,
+              fullName: [row.driver_first_name, row.driver_last_name]
+                .filter(Boolean)
+                .join(" ")
+                .trim() || null,
+              email: row.driver_email ?? null,
+              phoneNumber: row.driver_phone_number ?? null,
+              vehicleMake: row.driver_vehicle_make ?? null,
+              vehicleModel: row.driver_vehicle_model ?? null,
+              vehicleYear: row.driver_vehicle_year ?? null,
+              vehicleColor: row.driver_vehicle_color ?? null,
+              vehiclePlate: row.driver_vehicle_plate ?? null,
+              vehicleType: row.driver_vehicle_type ?? null,
+              status: row.driver_status ?? null,
             }
           : null,
       driverId: row.driver_id,
