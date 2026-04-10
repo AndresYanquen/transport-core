@@ -79,6 +79,14 @@ function validateLogin(req, res, next) {
     return;
   }
 
+  const { rememberMe } = req.body || {};
+
+  if (rememberMe !== undefined && typeof rememberMe !== "boolean") {
+    return res.status(400).json({
+      message: "rememberMe must be a boolean when provided.",
+    });
+  }
+
   next();
 }
 

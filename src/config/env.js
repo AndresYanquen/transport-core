@@ -87,6 +87,13 @@ const env = {
   security: {
     jwtSecret: process.env.JWT_SECRET || "dev-insecure-jwt-secret",
     jwtExpiresInSeconds: Number(process.env.JWT_ACCESS_TTL_SECONDS || 3600),
+    jwtRememberMeExpiresInSeconds: Number(
+      process.env.JWT_REMEMBER_ME_TTL_SECONDS || 2592000
+    ),
+  },
+  realtime: {
+    enabled: parseBoolean(process.env.SOCKET_ENABLED, true),
+    path: process.env.SOCKET_PATH || "/socket.io",
   },
 };
 

@@ -153,7 +153,7 @@ async function registerUser({
   };
 }
 
-async function loginUser({ email, password }) {
+async function loginUser({ email, password, rememberMe = false }) {
   const userRow = await AuthModel.findByEmail(email);
 
   if (!userRow) {
@@ -177,6 +177,10 @@ async function loginUser({ email, password }) {
 
   const user = AuthModel.toPublicUser(updatedRow ?? userRow);
 
+  const accessTokenExpiresInSeconds = rememberMe
+    ? env.security.jwtRememberMeExpiresInSeconds
+    : env.security.jwtExpiresInSeconds;
+
   const accessToken = signJwt(
     {
       sub: user.id,
@@ -186,18 +190,32 @@ async function loginUser({ email, password }) {
     },
     {
       secret: env.security.jwtSecret,
-      expiresInSeconds: env.security.jwtExpiresInSeconds,
+      expiresInSeconds: accessTokenExpiresInSeconds,
     }
   );
 
   return {
     user,
     token: accessToken,
-    expiresIn: env.security.jwtExpiresInSeconds,
+    expiresIn: accessTokenExpiresInSeconds,
+    rememberMe: Boolean(rememberMe),
+  };
+}
+
+async function getCurrentUser(authenticatedUser) {
+  if (!authenticatedUser || !authenticatedUser.id) {
+    const error = new Error("Unauthorized");
+    error.status = 401;
+    throw error;
+  }
+
+  return {
+    user: authenticatedUser,
   };
 }
 
 module.exports = {
   registerUser,
   loginUser,
+  getCurrentUser,
 };

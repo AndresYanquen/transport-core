@@ -15,8 +15,112 @@ const {
   RIDE_INVITE_STATUS_VALUES,
 } = require("../constants/ride-invite-status");
 const { applyTransitionSideEffects } = require("./ride-effects.service");
+const { emitToRide, emitToUser } = require("../../../realtime/socket.server");
 
 const pool = RideModel.getPool();
+
+function safeRealtimeEmit(executor) {
+  try {
+    executor();
+  } catch (error) {
+    console.error("Realtime emit failed:", error);
+  }
+}
+
+function emitRideStatusUpdated({
+  ride,
+  event = null,
+  previousStatus = null,
+  pendingInvites = undefined,
+}) {
+  if (!ride?.id) {
+    return;
+  }
+
+  const payload = {
+    rideId: ride.id,
+    previousStatus,
+    ride,
+    event,
+    emittedAt: new Date().toISOString(),
+  };
+
+  if (pendingInvites !== undefined) {
+    payload.pendingInvites = pendingInvites;
+  }
+
+  safeRealtimeEmit(() => emitToRide(ride.id, "ride:status-updated", payload));
+
+  if (ride.clientId) {
+    safeRealtimeEmit(() => emitToUser(ride.clientId, "ride:status-updated", payload));
+  }
+
+  if (ride.driverId) {
+    safeRealtimeEmit(() => emitToUser(ride.driverId, "ride:status-updated", payload));
+  }
+}
+
+function emitDriverInvitesCreated({
+  ride,
+  invites,
+}) {
+  if (!ride?.id || !Array.isArray(invites) || !invites.length) {
+    return;
+  }
+
+  invites.forEach((invite) => {
+    const payload = {
+      rideId: ride.id,
+      invite,
+      ride,
+      emittedAt: new Date().toISOString(),
+    };
+
+    safeRealtimeEmit(() => emitToUser(invite.driverId, "ride:invite-created", payload));
+  });
+
+  if (ride.clientId) {
+    safeRealtimeEmit(() =>
+      emitToUser(ride.clientId, "ride:invites-updated", {
+        rideId: ride.id,
+        invitedDrivers: invites.map((invite) => invite.driverId),
+        invites,
+        emittedAt: new Date().toISOString(),
+      })
+    );
+  }
+}
+
+function emitDriverInviteResponded({
+  ride,
+  invite,
+  event = null,
+  pendingInvites = undefined,
+}) {
+  if (!ride?.id || !invite) {
+    return;
+  }
+
+  const payload = {
+    rideId: ride.id,
+    invite,
+    ride,
+    event,
+    emittedAt: new Date().toISOString(),
+  };
+
+  if (pendingInvites !== undefined) {
+    payload.pendingInvites = pendingInvites;
+  }
+
+  safeRealtimeEmit(() => emitToUser(invite.driverId, "ride:invite-responded", payload));
+
+  if (ride.clientId) {
+    safeRealtimeEmit(() => emitToUser(ride.clientId, "ride:invite-responded", payload));
+  }
+
+  safeRealtimeEmit(() => emitToRide(ride.id, "ride:invite-responded", payload));
+}
 
 function createHttpError(status, message) {
   const error = new Error(message);
@@ -468,6 +572,12 @@ async function createRide({
       event: RideModel.mapEventRow(eventRow),
     };
 
+    emitRideStatusUpdated({
+      ride: baseResult.ride,
+      event: baseResult.event,
+      previousStatus: null,
+    });
+
     if (!autoAssign) {
       return baseResult;
     }
@@ -637,8 +747,7 @@ async function assignDriver({
     }
 
     await dbClient.query("COMMIT");
-
-    return {
+    const result = {
       ride: transitionResult ? transitionResult.ride : RideModel.mapRideRow(workingRideRow),
       invites: invites.length
         ? invites
@@ -648,6 +757,21 @@ async function assignDriver({
       newlyInvitedDrivers: invitedDriversDetails,
       event: RideModel.mapEventRow(invitationEvent) ?? transitionResult?.event ?? null,
     };
+
+    if (transitionResult?.ride) {
+      emitRideStatusUpdated({
+        ride: transitionResult.ride,
+        event: transitionResult.event,
+        previousStatus: transitionResult.previousStatus,
+      });
+    }
+
+    emitDriverInvitesCreated({
+      ride: result.ride,
+      invites,
+    });
+
+    return result;
   } catch (error) {
     await dbClient.query("ROLLBACK");
     throw error;
@@ -747,12 +871,44 @@ async function respondDriverAssignment({
     });
 
     await dbClient.query("COMMIT");
-
-    return {
+    const response = {
       ride: result.ride,
       pendingInvites,
       event: result.event,
     };
+
+    if (normalizedAction === "accept") {
+      emitRideStatusUpdated({
+        ride: response.ride,
+        event: response.event,
+        previousStatus: RideStatus.PENDING_DRIVER,
+        pendingInvites: response.pendingInvites,
+      });
+
+      emitDriverInviteResponded({
+        ride: response.ride,
+        invite: {
+          rideId,
+          driverId,
+          status: RideInviteStatus.ACCEPTED,
+        },
+        event: response.event,
+        pendingInvites: response.pendingInvites,
+      });
+    } else {
+      emitDriverInviteResponded({
+        ride: response.ride,
+        invite: {
+          rideId,
+          driverId,
+          status: RideInviteStatus.REJECTED,
+        },
+        event: response.event,
+        pendingInvites: response.pendingInvites,
+      });
+    }
+
+    return response;
   } catch (error) {
     await dbClient.query("ROLLBACK");
     throw error;
@@ -826,6 +982,13 @@ async function driverProgress({
     });
 
     await dbClient.query("COMMIT");
+
+    emitRideStatusUpdated({
+      ride: result.ride,
+      event: result.event,
+      previousStatus: result.previousStatus,
+    });
+
     return result;
   } catch (error) {
     await dbClient.query("ROLLBACK");
@@ -879,6 +1042,13 @@ async function updateRideStatus({
       pricingBreakdown,
     });
     await dbClient.query("COMMIT");
+
+    emitRideStatusUpdated({
+      ride: result.ride,
+      event: result.event,
+      previousStatus: result.previousStatus,
+    });
+
     return {
       ...result,
       statusChanged: true,
