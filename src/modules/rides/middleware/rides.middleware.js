@@ -33,8 +33,11 @@ function toWktPoint(location) {
 function validateCreateRide(req, res, next) {
   const {
     clientId,
+    pickupAddress,
+    dropoffAddress,
     pickupLocation,
     dropoffLocation,
+    hasDestination,
     serviceType = "standard",
     estimatedDistanceMeters,
     estimatedDurationSeconds,
@@ -47,12 +50,43 @@ function validateCreateRide(req, res, next) {
     return res.status(400).json({ message: "clientId is required." });
   }
 
-  const pickupPointWkt = toWktPoint(pickupLocation);
-  const dropoffPointWkt = toWktPoint(dropoffLocation);
-
-  if (!pickupPointWkt || !dropoffPointWkt) {
+  if (!pickupAddress || typeof pickupAddress !== "string" || !pickupAddress.trim()) {
     return res.status(400).json({
-      message: "pickupLocation and dropoffLocation must include valid lat/lng values.",
+      message: "pickupAddress is required.",
+    });
+  }
+
+  if (dropoffAddress !== undefined && dropoffAddress !== null) {
+    if (typeof dropoffAddress !== "string") {
+      return res.status(400).json({
+        message: "dropoffAddress must be a string when provided.",
+      });
+    }
+  }
+
+  if (hasDestination !== undefined && typeof hasDestination !== "boolean") {
+    return res.status(400).json({
+      message: "hasDestination must be a boolean when provided.",
+    });
+  }
+
+  const pickupPointWkt = toWktPoint(pickupLocation);
+  if (!pickupPointWkt) {
+    return res.status(400).json({
+      message: "pickupLocation must include valid lat/lng values.",
+    });
+  }
+
+  const dropoffPointWkt = toWktPoint(dropoffLocation);
+  const resolvedHasDestination =
+    hasDestination !== undefined
+      ? hasDestination
+      : Boolean(dropoffPointWkt || (dropoffAddress && dropoffAddress.trim()));
+
+  if (resolvedHasDestination && (!dropoffPointWkt || !dropoffAddress || !dropoffAddress.trim())) {
+    return res.status(400).json({
+      message:
+        "When hasDestination is true, dropoffLocation and dropoffAddress are required.",
     });
   }
 
@@ -108,7 +142,17 @@ function validateCreateRide(req, res, next) {
   }
 
   req.body.pickupPointWkt = pickupPointWkt;
-  req.body.dropoffPointWkt = dropoffPointWkt;
+  req.body.hasDestination = resolvedHasDestination;
+  req.body.pickupAddress = pickupAddress.trim();
+
+  if (resolvedHasDestination) {
+    req.body.dropoffPointWkt = dropoffPointWkt;
+    req.body.dropoffAddress = dropoffAddress.trim();
+  } else {
+    req.body.dropoffPointWkt = null;
+    req.body.dropoffAddress = null;
+    req.body.dropoffLocation = null;
+  }
 
   next();
 }
@@ -374,6 +418,35 @@ function validateNoShow(req, res, next) {
   next();
 }
 
+function validateRateRide(req, res, next) {
+  const { stars, comment, tags } = req.body || {};
+
+  if (stars === undefined || stars === null) {
+    return res.status(400).json({ message: "stars is required." });
+  }
+
+  const parsedStars = Number(stars);
+  if (!Number.isInteger(parsedStars) || parsedStars < 1 || parsedStars > 5) {
+    return res.status(400).json({
+      message: "stars must be an integer between 1 and 5.",
+    });
+  }
+
+  if (comment !== undefined && comment !== null && typeof comment !== "string") {
+    return res.status(400).json({
+      message: "comment must be a string when provided.",
+    });
+  }
+
+  if (tags !== undefined && tags !== null && !Array.isArray(tags)) {
+    return res.status(400).json({
+      message: "tags must be an array of strings when provided.",
+    });
+  }
+
+  next();
+}
+
 module.exports = {
   createRide: validateCreateRide,
   assignDriver: validateAssignDriver,
@@ -384,4 +457,5 @@ module.exports = {
   markNoShow: validateNoShow,
   requeueRide: (_req, _res, next) => next(),
   systemCancelRide: validateCancelRide,
+  rateRide: validateRateRide,
 };

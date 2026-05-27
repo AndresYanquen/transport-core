@@ -1,4 +1,5 @@
 const RideService = require("../services/ride.service");
+const RideRatingService = require("../services/ride-rating.service");
 
 async function createRide(req, res, next) {
   try {
@@ -30,7 +31,8 @@ async function updateRideStatus(req, res, next) {
 
 async function getRide(req, res, next) {
   try {
-    const { includeEvents, includeDriver, eventsLimit } = req.query;
+    const { includeEvents, includeDriver, includePassenger, includeRatings, eventsLimit } =
+      req.query;
 
     const includeEventsFlag =
       typeof includeEvents === "string"
@@ -40,16 +42,39 @@ async function getRide(req, res, next) {
       typeof includeDriver === "string"
         ? ["true", "1", "yes"].includes(includeDriver.toLowerCase())
         : Boolean(includeDriver);
+    const includePassengerFlag =
+      typeof includePassenger === "string"
+        ? ["true", "1", "yes"].includes(includePassenger.toLowerCase())
+        : Boolean(includePassenger);
+    const includeRatingsFlag =
+      typeof includeRatings === "string"
+        ? ["true", "1", "yes"].includes(includeRatings.toLowerCase())
+        : Boolean(includeRatings);
 
     const limit = eventsLimit ? Number(eventsLimit) : undefined;
 
     const result = await RideService.getRideById(req.params.rideId, {
       includeEvents: includeEventsFlag,
       includeDriver: includeDriverFlag,
+      includePassenger: includePassengerFlag,
+      includeRatings: includeRatingsFlag,
       eventsLimit: limit,
-    });
+    }, req.user);
 
     res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function rateRide(req, res, next) {
+  try {
+    const { stars, comment, tags } = req.body || {};
+    const result = await RideRatingService.rateRide(
+      { rideId: req.params.rideId, stars, comment, tags },
+      req.user
+    );
+    res.status(201).json(result);
   } catch (error) {
     next(error);
   }
@@ -225,4 +250,5 @@ module.exports = {
   markNoShow,
   requeueRide,
   systemCancelRide,
+  rateRide,
 };

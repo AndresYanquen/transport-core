@@ -6,6 +6,7 @@ const { env } = require("./config");
 const authRoutes = require("./modules/auth/routes/auth.routes");
 const rideRoutes = require("./modules/rides/routes/ride.routes");
 const driverRoutes = require("./modules/drivers/routes/driver.routes");
+const adminSimulationRoutes = require("./modules/admin-simulation/routes/admin-simulation.routes");
 const { authenticate } = require("./modules/auth/middleware/authentication.middleware");
 
 const app = express();
@@ -49,6 +50,12 @@ app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/rides", authenticate, rideRoutes);
 app.use("/api/drivers", authenticate, driverRoutes);
+// Public in non-production for debugging. In production, require auth + admin role.
+if (String(env.nodeEnv || "").toLowerCase() === "production") {
+  app.use("/api/admin/simulation", authenticate, adminSimulationRoutes);
+} else {
+  app.use("/api/admin/simulation", adminSimulationRoutes);
+}
 
 app.get("/api/health", async (_req, res) => {
   try {

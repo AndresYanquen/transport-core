@@ -1,5 +1,6 @@
 const { pool, query } = require("../../../config/database");
 const { RideInviteStatus } = require("../constants/ride-invite-status");
+const { TERMINAL_RIDE_STATUSES } = require("../constants/ride-status");
 
 const BASE_RIDE_FIELDS = `
   id,
@@ -9,6 +10,7 @@ const BASE_RIDE_FIELDS = `
   service_type,
   pickup_address,
   dropoff_address,
+  has_destination,
   ST_AsGeoJSON(pickup_point)::jsonb AS pickup_point_geojson,
   ST_AsGeoJSON(dropoff_point)::jsonb AS dropoff_point_geojson,
   estimated_distance_meters,
@@ -87,6 +89,7 @@ class RideModel {
     serviceType,
     pickupAddress,
     dropoffAddress,
+    hasDestination,
     pickupLocation,
     dropoffLocation,
     estimatedDistanceMeters,
@@ -137,6 +140,7 @@ class RideModel {
           service_type,
           pickup_address,
           dropoff_address,
+          has_destination,
           pickup_point,
           dropoff_point,
           estimated_distance_meters,
@@ -159,13 +163,13 @@ class RideModel {
           $4,
           $5,
           $6,
-          CASE WHEN $7::text IS NULL THEN NULL
-              ELSE ST_GeogFromText($7::text)
-          END,
+          $7,
           CASE WHEN $8::text IS NULL THEN NULL
               ELSE ST_GeogFromText($8::text)
           END,
-          $9,
+          CASE WHEN $9::text IS NULL THEN NULL
+              ELSE ST_GeogFromText($9::text)
+          END,
           $10,
           $11,
           $12,
@@ -173,10 +177,11 @@ class RideModel {
           $14,
           $15,
           $16,
-          NULL,
-          COALESCE($17::jsonb, '{}'::jsonb),
+          $17,
           $18,
-          $19
+          COALESCE($19::jsonb, '{}'::jsonb),
+          $20,
+          $21
         )
         RETURNING ${BASE_RIDE_FIELDS}
       `,
@@ -187,6 +192,7 @@ class RideModel {
         serviceType,
         pickupAddress ?? null,
         dropoffAddress ?? null,
+        Boolean(hasDestination),
         pickupWkt,
         dropoffWkt,
         estimatedDistance,
@@ -197,6 +203,7 @@ class RideModel {
         finalFare,
         surge,
         currency ?? "USD",
+        paymentReference ?? null,
         pricingBreakdown ? JSON.stringify(pricingBreakdown) : null,
         cancellationReason ?? null,
         scheduledAt ?? null,
@@ -234,7 +241,10 @@ class RideModel {
     return rows[0] ?? null;
   }
 
-  static async getRideById(rideId, { includeDriver = false, dbClient } = {}) {
+  static async getRideById(
+    rideId,
+    { includeDriver = false, includePassenger = false, dbClient } = {}
+  ) {
     const executor = getExecutor(dbClient);
     const driverSelect = includeDriver
       ? `,
@@ -248,7 +258,10 @@ class RideModel {
           d.vehicle_color AS driver_vehicle_color,
           d.vehicle_plate AS driver_vehicle_plate,
           d.vehicle_type AS driver_vehicle_type,
-          d.status AS driver_status`
+          d.status AS driver_status,
+          ST_AsGeoJSON(d.current_location)::jsonb AS driver_current_location_geojson,
+          d.heading_degrees AS driver_heading_degrees,
+          d.speed_kmh AS driver_speed_kmh`
       : "";
 
     const driverJoin = includeDriver
@@ -258,16 +271,30 @@ class RideModel {
       `
       : "";
 
+    const passengerSelect = includePassenger
+      ? `,
+          cu.first_name AS client_first_name,
+          cu.last_name AS client_last_name,
+          cu.email AS client_email,
+          cu.phone_number AS client_phone_number`
+      : "";
+
+    const passengerJoin = includePassenger
+      ? "LEFT JOIN users cu ON cu.id = r.client_id"
+      : "";
+
     const { rows } = await executor.query(
       `
         SELECT
           r.*
           ${driverSelect}
+          ${passengerSelect}
         FROM (
           SELECT ${BASE_RIDE_FIELDS}
           FROM rides
         ) r
         ${driverJoin}
+        ${passengerJoin}
         WHERE r.id = $1
       `,
       [rideId]
@@ -415,13 +442,41 @@ class RideModel {
               vehiclePlate: row.driver_vehicle_plate ?? null,
               vehicleType: row.driver_vehicle_type ?? null,
               status: row.driver_status ?? null,
+              currentLocation: (() => {
+                const geo = parseJson(row.driver_current_location_geojson);
+                if (!geo || !Array.isArray(geo.coordinates)) {
+                  return row.driver_id ? { lat: null, lng: null } : null;
+                }
+
+                return {
+                  lat: geo.coordinates[1],
+                  lng: geo.coordinates[0],
+                };
+              })(),
+              headingDegrees: row.driver_heading_degrees ?? null,
+              speedKmh: row.driver_speed_kmh ?? null,
             }
           : null,
+      driverLocation: (() => {
+        const geo = parseJson(row.driver_current_location_geojson);
+        if (!geo || !Array.isArray(geo.coordinates)) {
+          return row.driver_id ? { lat: null, lng: null } : null;
+        }
+
+        return {
+          lat: geo.coordinates[1],
+          lng: geo.coordinates[0],
+        };
+      })(),
       driverId: row.driver_id,
       status: row.status,
       serviceType: row.service_type,
       pickupAddress: row.pickup_address,
       dropoffAddress: row.dropoff_address,
+      hasDestination:
+        row.has_destination !== undefined && row.has_destination !== null
+          ? Boolean(row.has_destination)
+          : Boolean(dropoffLocation || row.dropoff_address),
       pickupLocation,
       dropoffLocation,
       estimatedDistanceMeters: row.estimated_distance_meters,
@@ -784,6 +839,23 @@ class RideModel {
         driverIdRequired: true,
       }
     );
+  }
+
+  static async listActiveRidesByDriverId(driverId, { dbClient } = {}) {
+    const executor = getExecutor(dbClient);
+    const terminalStatuses = Array.from(TERMINAL_RIDE_STATUSES);
+    const { rows } = await executor.query(
+      `
+        SELECT ${BASE_RIDE_FIELDS}
+        FROM rides
+        WHERE driver_id = $1
+          AND status <> ALL($2::text[])
+        ORDER BY updated_at DESC
+      `,
+      [driverId, terminalStatuses]
+    );
+
+    return rows;
   }
 
   static getPool() {

@@ -25,6 +25,7 @@ exports.up = async function up(knex) {
       .defaultTo("standard");
     table.string("pickup_address", 255);
     table.string("dropoff_address", 255);
+    table.boolean("has_destination").notNullable().defaultTo(false);
     table.specificType("pickup_point", "geography(Point, 4326)");
     table.specificType("dropoff_point", "geography(Point, 4326)");
     table.integer("estimated_distance_meters");

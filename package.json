@@ -6,6 +6,10 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "test": "node --test",
+    "simulate": "node simulator/simulator.js",
+    "simulate:drivers": "DRIVER_COUNT=100 CUSTOMER_COUNT=0 node simulator/simulator.js",
+    "simulate:customers": "DRIVER_COUNT=0 CUSTOMER_COUNT=500 node simulator/simulator.js",
+    "simulate:chaos": "ENABLE_CHAOS_MODE=true node simulator/simulator.js",
     "migrate:make": "npx knex migrate:make",
     "migrate:latest": "npx knex migrate:latest",
     "migrate:rollback": "npx knex migrate:rollback",
@@ -17,12 +21,14 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "axios": "^1.11.0",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "pg": "^8.16.3",
-    "socket.io": "^4.8.3"
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "knex": "^3.1.0",

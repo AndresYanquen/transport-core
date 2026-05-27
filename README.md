@@ -72,6 +72,7 @@ Use the `CORS_ALLOWED_ORIGINS` environment variable to control which origins may
 - `PATCH /api/rides/:rideId/assign` – Moves a ride into the matching queue if needed and sends invites to a selected or nearby online driver.
 - `PATCH /api/rides/:rideId/driver-response` – Driver accepts or rejects the invitation.
 - `PATCH /api/rides/:rideId/driver-progress` – Driver advances ride status (`driver_en_route`, `driver_arrived`, `in_progress`, `completed`, `canceled_by_driver`).
+- `POST /api/rides/:rideId/rate` – Client rates driver (or driver rates client) after the ride is completed.
 - `PATCH /api/rides/:rideId/cancel` – Cancels the ride as `canceled_by_client`, `canceled_by_driver`, or `canceled_by_system` depending on the caller role.
 - `PATCH /api/rides/:rideId/no-show` – Marks a ride as `no_show` from `driver_arrived`.
 - `PATCH /api/rides/:rideId/requeue` – Admin/system command to move a `driver_assigned` ride back to `pending_driver`.
@@ -191,6 +192,17 @@ PATCH /api/rides/<ride-id>/driver-progress
   "actualDurationSeconds": 780,
   "finalFareAmount": 22.5,
   "payload": { "tip": 3.0 }
+}
+```
+
+Rate a completed ride (client rates driver, or driver rates client):
+
+```json
+POST /api/rides/<ride-id>/rate
+{
+  "stars": 5,
+  "comment": "Great ride",
+  "tags": ["clean", "safe"]
 }
 ```
 

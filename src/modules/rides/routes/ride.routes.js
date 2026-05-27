@@ -178,6 +178,13 @@ router.patch(
   RideMiddleware.systemCancelRide,
   RideController.systemCancelRide
 );
+router.post(
+  "/:rideId/rate",
+  authorizeRoles("client", "driver"),
+  ensureValidRideId,
+  RideMiddleware.rateRide,
+  RideController.rateRide
+);
 router.get(
   "/:rideId",
   authorizeRoles("client", "driver", "admin"),

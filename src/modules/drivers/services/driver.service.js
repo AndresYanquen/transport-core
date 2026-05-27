@@ -1,9 +1,77 @@
 const DriverModel = require("../models/driver.model");
+const RideModel = require("../../rides/models/ride.model");
+const { emitToRide, emitToUser } = require("../../../realtime/socket.server");
 
 function createHttpError(status, message) {
   const error = new Error(message);
   error.status = status;
   return error;
+}
+
+function safeRealtimeEmit(executor) {
+  try {
+    executor();
+  } catch (error) {
+    console.error("Realtime emit failed:", error);
+  }
+}
+
+async function emitDriverLocationUpdated(driver) {
+  if (!driver?.userId) {
+    return;
+  }
+
+  const rideRows = await RideModel.listActiveRidesByDriverId(driver.userId);
+  if (!rideRows.length) {
+    return;
+  }
+
+  const emittedAt = new Date().toISOString();
+
+  for (const rideRow of rideRows) {
+    const payload = {
+      rideId: rideRow.id,
+      driverId: driver.userId,
+      currentLocation: driver.currentLocation ?? { lat: null, lng: null },
+      headingDegrees: driver.headingDegrees ?? null,
+      speedKmh: driver.speedKmh ?? null,
+      emittedAt,
+    };
+
+    safeRealtimeEmit(() => emitToRide(rideRow.id, "ride:driver-location-updated", payload));
+    if (rideRow.client_id) {
+      safeRealtimeEmit(() =>
+        emitToUser(rideRow.client_id, "ride:driver-location-updated", payload)
+      );
+    }
+    if (rideRow.driver_id) {
+      safeRealtimeEmit(() =>
+        emitToUser(rideRow.driver_id, "ride:driver-location-updated", payload)
+      );
+    }
+
+    safeRealtimeEmit(() =>
+      emitToRide(rideRow.id, "ride:status-updated", {
+        rideId: rideRow.id,
+        previousStatus: rideRow.status,
+        ride: {
+          id: rideRow.id,
+          driverId: driver.userId,
+          status: rideRow.status,
+          driverLocation: driver.currentLocation ?? { lat: null, lng: null },
+          driver: {
+            currentLocation: driver.currentLocation ?? { lat: null, lng: null },
+            headingDegrees: driver.headingDegrees ?? null,
+            speedKmh: driver.speedKmh ?? null,
+          },
+        },
+        event: {
+          type: "driver_location_updated",
+        },
+        emittedAt,
+      })
+    );
+  }
 }
 
 async function ensureDriver(driverId, { forUpdate = false, dbClient } = {}) {
@@ -31,6 +99,8 @@ async function updateLocation(driverId, { currentLocationWkt, heading, speedKmh 
   if (!driver) {
     throw createHttpError(500, "Failed to update driver location.");
   }
+
+  await emitDriverLocationUpdated(driver);
 
   return driver;
 }

@@ -16,6 +16,7 @@ const {
 } = require("../constants/ride-invite-status");
 const { applyTransitionSideEffects } = require("./ride-effects.service");
 const { emitToRide, emitToUser } = require("../../../realtime/socket.server");
+const RideRatingService = require("./ride-rating.service");
 
 const pool = RideModel.getPool();
 
@@ -27,7 +28,7 @@ function safeRealtimeEmit(executor) {
   }
 }
 
-function emitRideStatusUpdated({
+async function emitRideStatusUpdated({
   ride,
   event = null,
   previousStatus = null,
@@ -37,10 +38,23 @@ function emitRideStatusUpdated({
     return;
   }
 
+  let payloadRide = ride;
+  try {
+    const enrichedRideRow = await RideModel.getRideById(ride.id, {
+      includeDriver: true,
+      includePassenger: true,
+    });
+    if (enrichedRideRow) {
+      payloadRide = RideModel.mapRideRow(enrichedRideRow);
+    }
+  } catch (error) {
+    console.error("Failed to enrich ride realtime payload:", error);
+  }
+
   const payload = {
-    rideId: ride.id,
+    rideId: payloadRide.id,
     previousStatus,
-    ride,
+    ride: payloadRide,
     event,
     emittedAt: new Date().toISOString(),
   };
@@ -49,14 +63,14 @@ function emitRideStatusUpdated({
     payload.pendingInvites = pendingInvites;
   }
 
-  safeRealtimeEmit(() => emitToRide(ride.id, "ride:status-updated", payload));
+  safeRealtimeEmit(() => emitToRide(payloadRide.id, "ride:status-updated", payload));
 
-  if (ride.clientId) {
-    safeRealtimeEmit(() => emitToUser(ride.clientId, "ride:status-updated", payload));
+  if (payloadRide.clientId) {
+    safeRealtimeEmit(() => emitToUser(payloadRide.clientId, "ride:status-updated", payload));
   }
 
-  if (ride.driverId) {
-    safeRealtimeEmit(() => emitToUser(ride.driverId, "ride:status-updated", payload));
+  if (payloadRide.driverId) {
+    safeRealtimeEmit(() => emitToUser(payloadRide.driverId, "ride:status-updated", payload));
   }
 }
 
@@ -500,6 +514,7 @@ async function createRide({
   dropoffAddress,
   pickupLocation,
   dropoffLocation,
+  hasDestination,
   estimatedDistanceMeters,
   estimatedDurationSeconds,
   estimatedFareAmount,
@@ -520,6 +535,12 @@ async function createRide({
   }
 
   const normalizedActorType = normalizeActorType(actorType, RideActorType.CLIENT);
+  const normalizedPickupAddress =
+    typeof pickupAddress === "string" ? pickupAddress.trim() : "";
+  if (!normalizedPickupAddress) {
+    throw createHttpError(400, "pickupAddress is required.");
+  }
+
   const normalizedPickupLocation = normalizeLocationInput(
     "pickupLocation",
     pickupLocation,
@@ -528,8 +549,21 @@ async function createRide({
   const normalizedDropoffLocation = normalizeLocationInput(
     "dropoffLocation",
     dropoffLocation,
-    { required: true }
+    { required: false }
   );
+  const normalizedDropoffAddress =
+    typeof dropoffAddress === "string" ? dropoffAddress.trim() : "";
+  const resolvedHasDestination =
+    typeof hasDestination === "boolean"
+      ? hasDestination
+      : Boolean(normalizedDropoffLocation || normalizedDropoffAddress);
+
+  if (resolvedHasDestination && (!normalizedDropoffLocation || !normalizedDropoffAddress)) {
+    throw createHttpError(
+      400,
+      "When hasDestination is true, dropoffLocation and dropoffAddress are required."
+    );
+  }
 
   const dbClient = await pool.connect();
   try {
@@ -539,10 +573,11 @@ async function createRide({
       clientId,
       status: RideStatus.REQUESTED,
       serviceType,
-      pickupAddress,
-      dropoffAddress,
+      pickupAddress: normalizedPickupAddress,
+      dropoffAddress: resolvedHasDestination ? normalizedDropoffAddress : null,
       pickupLocation: normalizedPickupLocation,
-      dropoffLocation: normalizedDropoffLocation,
+      dropoffLocation: resolvedHasDestination ? normalizedDropoffLocation : null,
+      hasDestination: resolvedHasDestination,
       estimatedDistanceMeters,
       estimatedDurationSeconds,
       estimatedFareAmount,
@@ -572,7 +607,7 @@ async function createRide({
       event: RideModel.mapEventRow(eventRow),
     };
 
-    emitRideStatusUpdated({
+    await emitRideStatusUpdated({
       ride: baseResult.ride,
       event: baseResult.event,
       previousStatus: null,
@@ -759,7 +794,7 @@ async function assignDriver({
     };
 
     if (transitionResult?.ride) {
-      emitRideStatusUpdated({
+      await emitRideStatusUpdated({
         ride: transitionResult.ride,
         event: transitionResult.event,
         previousStatus: transitionResult.previousStatus,
@@ -812,11 +847,29 @@ async function respondDriverAssignment({
       throw createHttpError(404, `Ride ${rideId} not found.`);
     }
 
+    // Concurrency hardening: when multiple drivers act on the same ride invite set,
+    // it's expected that "late" responses arrive after another driver already accepted
+    // (ride moved to driver_assigned). Treat these as no-ops instead of 409 to avoid
+    // log spam and make the endpoint idempotent for simulators/mobile retries.
     if (rideRow.status !== RideStatus.PENDING_DRIVER) {
-      throw createHttpError(
-        409,
-        `Ride is in status "${rideRow.status}" and cannot accept/reject invitation.`
-      );
+      const mappedRide = RideModel.mapRideRow(rideRow);
+      const pendingInvites = await RideModel.listDriverInvites(dbClient, rideId, {
+        statuses: [RideInviteStatus.PENDING],
+      });
+
+      await dbClient.query("COMMIT");
+
+      const isAssignedToThisDriver =
+        rideRow.status === RideStatus.DRIVER_ASSIGNED && rideRow.driver_id === driverId;
+
+      return {
+        ride: mappedRide,
+        pendingInvites,
+        event: null,
+        idempotent: Boolean(isAssignedToThisDriver && normalizedAction === "accept"),
+        ignored: !isAssignedToThisDriver,
+        ignoreReason: isAssignedToThisDriver ? null : "ride_not_pending",
+      };
     }
 
     const invite = await RideModel.getDriverInvite(dbClient, rideId, driverId, {
@@ -824,7 +877,20 @@ async function respondDriverAssignment({
     });
 
     if (!invite || invite.status !== RideInviteStatus.PENDING) {
-      throw createHttpError(409, "Driver has no pending invitation for this ride.");
+      // Idempotency: if the invite was already expired/rejected due to someone else accepting,
+      // treat as no-op instead of error.
+      const pendingInvites = await RideModel.listDriverInvites(dbClient, rideId, {
+        statuses: [RideInviteStatus.PENDING],
+      });
+      await dbClient.query("COMMIT");
+      return {
+        ride: RideModel.mapRideRow(rideRow),
+        pendingInvites,
+        event: null,
+        idempotent: false,
+        ignored: true,
+        ignoreReason: "no_pending_invite",
+      };
     }
 
     let result;
@@ -878,7 +944,7 @@ async function respondDriverAssignment({
     };
 
     if (normalizedAction === "accept") {
-      emitRideStatusUpdated({
+      await emitRideStatusUpdated({
         ride: response.ride,
         event: response.event,
         previousStatus: RideStatus.PENDING_DRIVER,
@@ -983,7 +1049,7 @@ async function driverProgress({
 
     await dbClient.query("COMMIT");
 
-    emitRideStatusUpdated({
+    await emitRideStatusUpdated({
       ride: result.ride,
       event: result.event,
       previousStatus: result.previousStatus,
@@ -1043,7 +1109,7 @@ async function updateRideStatus({
     });
     await dbClient.query("COMMIT");
 
-    emitRideStatusUpdated({
+    await emitRideStatusUpdated({
       ride: result.ride,
       event: result.event,
       previousStatus: result.previousStatus,
@@ -1232,7 +1298,14 @@ async function listDriverInvites(filters = {}, viewer = null) {
 
 async function getRideById(
   rideId,
-  { includeEvents = false, includeDriver = false, eventsLimit = 50 } = {}
+  {
+    includeEvents = false,
+    includeDriver = false,
+    includePassenger = false,
+    includeRatings = false,
+    eventsLimit = 50,
+  } = {},
+  viewer = null
 ) {
   if (!rideId) {
     throw createHttpError(400, "rideId is required.");
@@ -1240,6 +1313,7 @@ async function getRideById(
 
   const rideRow = await RideModel.getRideById(rideId, {
     includeDriver,
+    includePassenger,
   });
 
   if (!rideRow) {
@@ -1248,8 +1322,15 @@ async function getRideById(
 
   const ride = RideModel.mapRideRow(rideRow);
 
+  const response = { ride, events: [] };
+
+  if (includeRatings) {
+    response.ratings = await RideRatingService.listRatings({ rideId }, viewer);
+    response.myRating = await RideRatingService.getMyRating({ rideId }, viewer);
+  }
+
   if (!includeEvents) {
-    return { ride, events: [] };
+    return response;
   }
 
   const eventRows = await RideModel.listRideEvents(
@@ -1259,7 +1340,7 @@ async function getRideById(
   );
 
   return {
-    ride,
+    ...response,
     events: eventRows.map(RideModel.mapEventRow),
   };
 }

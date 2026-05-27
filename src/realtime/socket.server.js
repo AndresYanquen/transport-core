@@ -3,8 +3,11 @@ const { Server } = require("socket.io");
 const { env } = require("../config");
 const AuthModel = require("../modules/auth/models/auth.model");
 const { verifyJwt } = require("../modules/auth/utils/jwt");
+const { query } = require("../config/database");
 
 let ioInstance = null;
+const uuidV4LikeRegex =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
 
 function isLocalhostOrigin(origin) {
   if (!origin) {
@@ -50,9 +53,7 @@ function extractSocketToken(socket) {
     return bearer;
   }
 
-  const queryToken =
-    typeof socket.handshake.query?.token === "string" ? socket.handshake.query.token : null;
-  return queryToken;
+  return null;
 }
 
 function userRoom(userId) {
@@ -65,6 +66,45 @@ function roleRoom(role) {
 
 function rideRoom(rideId) {
   return `ride:${rideId}`;
+}
+
+async function ensureUserCanAccessRideRoom({ rideId, userId, role }) {
+  if (!uuidV4LikeRegex.test(String(rideId || ""))) {
+    return { ok: false, reason: "invalid_ride_id" };
+  }
+
+  if (!userId) {
+    return { ok: false, reason: "unauthorized" };
+  }
+
+  const normalizedRole = String(role || "").toLowerCase();
+  if (normalizedRole === "admin") {
+    return { ok: true };
+  }
+
+  const { rows } = await query(
+    `
+      SELECT client_id, driver_id
+      FROM rides
+      WHERE id = $1
+      LIMIT 1
+    `,
+    [rideId]
+  );
+
+  if (!rows[0]) {
+    return { ok: false, reason: "ride_not_found" };
+  }
+
+  if (normalizedRole === "client" && rows[0].client_id === userId) {
+    return { ok: true };
+  }
+
+  if (normalizedRole === "driver" && rows[0].driver_id === userId) {
+    return { ok: true };
+  }
+
+  return { ok: false, reason: "forbidden" };
 }
 
 async function socketAuthMiddleware(socket, next) {
@@ -118,11 +158,34 @@ function registerConnectionHandlers(io) {
       connectedAt: new Date().toISOString(),
     });
 
-    socket.on("ride:subscribe", ({ rideId } = {}) => {
+    socket.on("ride:subscribe", async ({ rideId } = {}) => {
       if (!rideId) {
         return;
       }
-      socket.join(rideRoom(rideId));
+
+      try {
+        const access = await ensureUserCanAccessRideRoom({
+          rideId,
+          userId: user.id,
+          role: user.role,
+        });
+
+        if (!access.ok) {
+          socket.emit("ride:subscribe-denied", {
+            rideId,
+            reason: access.reason,
+          });
+          return;
+        }
+
+        socket.join(rideRoom(rideId));
+        socket.emit("ride:subscribed", { rideId });
+      } catch (error) {
+        socket.emit("ride:subscribe-denied", {
+          rideId,
+          reason: "server_error",
+        });
+      }
     });
 
     socket.on("ride:unsubscribe", ({ rideId } = {}) => {
