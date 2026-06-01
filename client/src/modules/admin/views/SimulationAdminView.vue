@@ -16,6 +16,10 @@ const filters = reactive({
   driverStatus: "any",
   activeOnly: true,
   stuckOnly: false,
+  fromDate: todayInputDate(),
+  fromTime: "00:00",
+  toDate: "",
+  toTime: "",
 });
 
 const pollingMs = ref(2000);
@@ -39,6 +43,56 @@ function parseMs(iso) {
   if (!iso) return null;
   const ms = new Date(iso).getTime();
   return Number.isFinite(ms) ? ms : null;
+}
+
+function pad2(value) {
+  return String(value).padStart(2, "0");
+}
+
+function todayInputDate() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function toIsoFromDateTime(dateValue, timeValue, endOfDay = false) {
+  if (!dateValue) return "";
+  const time = timeValue || (endOfDay ? "23:59" : "00:00");
+  const [year, month, day] = String(dateValue).split("-").map(Number);
+  const [hour, minute] = String(time).split(":").map(Number);
+
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute)
+  ) {
+    return "";
+  }
+
+  return new Date(year, month - 1, day, hour, minute, endOfDay ? 59 : 0).toISOString();
+}
+
+function timeRangeMs() {
+  const fromIso = toIsoFromDateTime(filters.fromDate, filters.fromTime, false);
+  const toIso = toIsoFromDateTime(filters.toDate, filters.toTime, true);
+
+  return {
+    fromIso,
+    toIso,
+    fromMs: parseMs(fromIso),
+    toMs: parseMs(toIso),
+  };
+}
+
+function isWithinTimeRange(iso) {
+  const ms = parseMs(iso);
+  const { fromMs, toMs } = timeRangeMs();
+
+  if (!ms) return false;
+  if (fromMs && ms < fromMs) return false;
+  if (toMs && ms > toMs) return false;
+  return true;
 }
 
 function isTerminalRideStatus(s) {
@@ -74,7 +128,13 @@ async function fetchState() {
   state.error = "";
 
   try {
-    const data = await apiRequest("/api/admin/simulation/state?limit=300", {
+    const params = new URLSearchParams({ limit: "300" });
+    const { fromIso, toIso } = timeRangeMs();
+
+    if (fromIso) params.set("from", fromIso);
+    if (toIso) params.set("to", toIso);
+
+    const data = await apiRequest(`/api/admin/simulation/state?${params.toString()}`, {
       method: "GET",
       auth: false,
     });
@@ -114,6 +174,13 @@ const rides = computed(() => state.payload?.rides || []);
 const recentEvents = computed(() => state.payload?.recentEvents || []);
 const metrics = computed(() => state.payload?.metrics || null);
 const server = computed(() => state.payload?.server || null);
+const activeTimeRangeLabel = computed(() => {
+  const from = filters.fromDate
+    ? `${filters.fromDate} ${filters.fromTime || "00:00"}`
+    : "beginning";
+  const to = filters.toDate ? `${filters.toDate} ${filters.toTime || "23:59"}` : "now";
+  return `${from} -> ${to}`;
+});
 
 const driversById = computed(() => {
   const map = new Map();
@@ -124,6 +191,7 @@ const driversById = computed(() => {
 const filteredDrivers = computed(() => {
   const q = filters.search.trim().toLowerCase();
   return drivers.value.filter((d) => {
+    if ((filters.fromDate || filters.toDate) && !isWithinTimeRange(d.updatedAt)) return false;
     if (filters.driverStatus !== "any" && d.status !== filters.driverStatus) return false;
     if (!q) return true;
     return (
@@ -136,6 +204,7 @@ const filteredDrivers = computed(() => {
 const filteredRides = computed(() => {
   const q = filters.search.trim().toLowerCase();
   return rides.value.filter((r) => {
+    if ((filters.fromDate || filters.toDate) && !isWithinTimeRange(r.requestedAt)) return false;
     if (filters.rideStatus !== "any" && r.status !== filters.rideStatus) return false;
     if (filters.activeOnly && isTerminalRideStatus(r.status)) return false;
     if (filters.stuckOnly && !isStuckRide(r, driversById.value)) return false;
@@ -147,6 +216,15 @@ const filteredRides = computed(() => {
       String(r.client?.email || "").toLowerCase().includes(q) ||
       String(r.driver?.email || "").toLowerCase().includes(q)
     );
+  });
+});
+
+const filteredRecentEvents = computed(() => {
+  return recentEvents.value.filter((event) => {
+    if ((filters.fromDate || filters.toDate) && !isWithinTimeRange(event.occurredAt)) {
+      return false;
+    }
+    return true;
   });
 });
 
@@ -187,6 +265,22 @@ function assignmentMs(r) {
 }
 
 const stuckRideCount = computed(() => filteredRides.value.filter((r) => isStuckRide(r, driversById.value)).length);
+
+function resetTimeFiltersToToday() {
+  filters.fromDate = todayInputDate();
+  filters.fromTime = "00:00";
+  filters.toDate = "";
+  filters.toTime = "";
+  fetchState();
+}
+
+function clearTimeFilters() {
+  filters.fromDate = "";
+  filters.fromTime = "";
+  filters.toDate = "";
+  filters.toTime = "";
+  fetchState();
+}
 </script>
 
 <template>
@@ -214,6 +308,71 @@ const stuckRideCount = computed(() => filteredRides.value.filter((r) => isStuckR
 
     <div v-if="state.error" class="mb-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
       {{ state.error }}
+    </div>
+
+    <div class="mb-3 rounded border border-slate-200 bg-white p-3">
+      <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div class="text-xs font-mono text-slate-700">Time Window</div>
+          <div class="mt-1 font-mono text-[11px] text-slate-500">{{ activeTimeRangeLabel }}</div>
+        </div>
+        <div class="flex flex-wrap items-end gap-2 text-xs">
+          <label class="grid gap-1 font-mono text-[11px] text-slate-600">
+            from date
+            <input
+              v-model="filters.fromDate"
+              type="date"
+              class="rounded border border-slate-200 px-2 py-1 font-mono text-xs"
+              @change="fetchState"
+            />
+          </label>
+          <label class="grid gap-1 font-mono text-[11px] text-slate-600">
+            from time
+            <input
+              v-model="filters.fromTime"
+              type="time"
+              class="rounded border border-slate-200 px-2 py-1 font-mono text-xs"
+              @change="fetchState"
+            />
+          </label>
+          <label class="grid gap-1 font-mono text-[11px] text-slate-600">
+            to date
+            <input
+              v-model="filters.toDate"
+              type="date"
+              class="rounded border border-slate-200 px-2 py-1 font-mono text-xs"
+              @change="fetchState"
+            />
+          </label>
+          <label class="grid gap-1 font-mono text-[11px] text-slate-600">
+            to time
+            <input
+              v-model="filters.toTime"
+              type="time"
+              class="rounded border border-slate-200 px-2 py-1 font-mono text-xs"
+              @change="fetchState"
+            />
+          </label>
+          <button
+            class="rounded border border-slate-200 bg-slate-900 px-2 py-1 font-mono text-xs text-white hover:bg-slate-800"
+            @click="fetchState"
+          >
+            Apply
+          </button>
+          <button
+            class="rounded border border-slate-200 bg-white px-2 py-1 font-mono text-xs text-slate-700 hover:bg-slate-50"
+            @click="resetTimeFiltersToToday"
+          >
+            Today
+          </button>
+          <button
+            class="rounded border border-slate-200 bg-white px-2 py-1 font-mono text-xs text-slate-700 hover:bg-slate-50"
+            @click="clearTimeFilters"
+          >
+            All
+          </button>
+        </div>
+      </div>
     </div>
 
     <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
@@ -354,11 +513,11 @@ const stuckRideCount = computed(() => filteredRides.value.filter((r) => isStuckR
       <div class="rounded border border-slate-200 bg-white p-3">
         <div class="mb-2 flex items-center justify-between">
           <div class="text-xs font-mono text-slate-700">Recent Events (ride_events)</div>
-          <div class="text-[11px] font-mono text-slate-500">{{ recentEvents.length }}</div>
+          <div class="text-[11px] font-mono text-slate-500">{{ filteredRecentEvents.length }}</div>
         </div>
         <div class="max-h-[420px] overflow-auto">
           <div
-            v-for="e in recentEvents"
+            v-for="e in filteredRecentEvents"
             :key="e.id"
             class="border-b border-slate-50 py-2 font-mono text-xs text-slate-700"
           >
@@ -368,7 +527,7 @@ const stuckRideCount = computed(() => filteredRides.value.filter((r) => isStuckR
             </div>
             <div class="text-slate-500">ride={{ shortId(e.rideId) }} actor={{ e.actorType }}</div>
           </div>
-          <div v-if="recentEvents.length === 0" class="py-6 text-center text-sm text-slate-500">No events</div>
+          <div v-if="filteredRecentEvents.length === 0" class="py-6 text-center text-sm text-slate-500">No events</div>
         </div>
       </div>
     </div>

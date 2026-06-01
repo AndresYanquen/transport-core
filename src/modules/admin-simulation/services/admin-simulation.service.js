@@ -17,8 +17,50 @@ function toIso(v) {
   }
 }
 
-async function getSimulationState({ limit = 200 } = {}) {
+function buildTimeFilter({ column, from, to, startIndex }) {
+  const clauses = [];
+  const values = [];
+  let paramIndex = startIndex;
+
+  if (from) {
+    clauses.push(`${column} >= $${paramIndex}`);
+    values.push(from);
+    paramIndex += 1;
+  }
+
+  if (to) {
+    clauses.push(`${column} <= $${paramIndex}`);
+    values.push(to);
+    paramIndex += 1;
+  }
+
+  return {
+    clause: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "",
+    values,
+    nextIndex: paramIndex,
+  };
+}
+
+async function getSimulationState({ limit = 200, from = null, to = null } = {}) {
   const now = new Date();
+  const driversTimeFilter = buildTimeFilter({
+    column: "d.updated_at",
+    from,
+    to,
+    startIndex: 1,
+  });
+  const ridesTimeFilter = buildTimeFilter({
+    column: "r.requested_at",
+    from,
+    to,
+    startIndex: 2,
+  });
+  const eventsTimeFilter = buildTimeFilter({
+    column: "e.occurred_at",
+    from,
+    to,
+    startIndex: 2,
+  });
 
   // Driver snapshot, enriched with "currentRideId" if driver has any non-terminal ride.
   const driversSql = `
@@ -40,6 +82,7 @@ async function getSimulationState({ limit = 200 } = {}) {
       ) AS current_ride_id
     FROM drivers d
     JOIN users u ON u.id = d.user_id
+    ${driversTimeFilter.clause}
     ORDER BY d.updated_at DESC
     LIMIT 2000
   `;
@@ -58,6 +101,7 @@ async function getSimulationState({ limit = 200 } = {}) {
     FROM rides r
     JOIN users uc ON uc.id = r.client_id
     LEFT JOIN users ud ON ud.id = r.driver_id
+    ${ridesTimeFilter.clause}
     ORDER BY r.requested_at DESC
     LIMIT $1
   `;
@@ -72,14 +116,15 @@ async function getSimulationState({ limit = 200 } = {}) {
       e.payload,
       e.occurred_at
     FROM ride_events e
+    ${eventsTimeFilter.clause}
     ORDER BY e.occurred_at DESC
     LIMIT $1
   `;
 
   const [driversRes, ridesRes, eventsRes] = await Promise.all([
-    query(driversSql, []),
-    query(ridesSql, [limit]),
-    query(rideEventsSql, [Math.min(500, limit)]),
+    query(driversSql, driversTimeFilter.values),
+    query(ridesSql, [limit, ...ridesTimeFilter.values]),
+    query(rideEventsSql, [Math.min(500, limit), ...eventsTimeFilter.values]),
   ]);
 
   const drivers = (driversRes.rows || []).map((row) => {
@@ -231,4 +276,3 @@ async function getSimulationState({ limit = 200 } = {}) {
 module.exports = {
   getSimulationState,
 };
-

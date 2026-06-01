@@ -17,6 +17,13 @@ const DEFAULTS = {
   API_TIMEOUT_MS: 10_000,
   MAX_CONCURRENT_CUSTOMERS: 50,
   SHUTDOWN_FORCE_EXIT_MS: 4000,
+  SIM_AUTO_SEED_USERS: true,
+  SIM_ASSERT_SUCCESS: false,
+  SIM_MAX_API_ERRORS: 0,
+  SIM_MAX_API_ERROR_RATE: 0,
+  SIM_MIN_COMPLETION_RATE: 0,
+  SIM_MAX_AVG_API_MS: 2000,
+  SIM_MAX_AVG_ASSIGNMENT_MS: 30000,
 };
 
 function toNumber(value, fallback) {
@@ -28,6 +35,12 @@ function toBool(value, fallback) {
   if (value === undefined || value === null) return fallback;
   const v = String(value).trim().toLowerCase();
   return ["1", "true", "yes", "on"].includes(v);
+}
+
+function toOptionalNumber(value, fallback = null) {
+  if (value === undefined || value === null || String(value).trim() === "") return fallback;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
 }
 
 function loadConfig() {
@@ -74,6 +87,26 @@ function loadConfig() {
       process.env.SHUTDOWN_FORCE_EXIT_MS,
       DEFAULTS.SHUTDOWN_FORCE_EXIT_MS
     ),
+    autoSeedUsers: toBool(process.env.SIM_AUTO_SEED_USERS, DEFAULTS.SIM_AUTO_SEED_USERS),
+    success: {
+      assert: toBool(process.env.SIM_ASSERT_SUCCESS, DEFAULTS.SIM_ASSERT_SUCCESS),
+      maxApiErrors: toNumber(process.env.SIM_MAX_API_ERRORS, DEFAULTS.SIM_MAX_API_ERRORS),
+      maxApiErrorRate: toNumber(
+        process.env.SIM_MAX_API_ERROR_RATE,
+        DEFAULTS.SIM_MAX_API_ERROR_RATE
+      ),
+      minRidesRequested: toOptionalNumber(process.env.SIM_MIN_RIDES_REQUESTED),
+      minRidesCompleted: toOptionalNumber(process.env.SIM_MIN_RIDES_COMPLETED),
+      minCompletionRate: toNumber(
+        process.env.SIM_MIN_COMPLETION_RATE,
+        DEFAULTS.SIM_MIN_COMPLETION_RATE
+      ),
+      maxAvgApiMs: toNumber(process.env.SIM_MAX_AVG_API_MS, DEFAULTS.SIM_MAX_AVG_API_MS),
+      maxAvgAssignmentMs: toNumber(
+        process.env.SIM_MAX_AVG_ASSIGNMENT_MS,
+        DEFAULTS.SIM_MAX_AVG_ASSIGNMENT_MS
+      ),
+    },
     endpoints: {
       driverStatusPathTemplate:
         process.env.DRIVER_STATUS_PATH_TEMPLATE || "/api/drivers/:driverId/status",

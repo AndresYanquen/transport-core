@@ -37,7 +37,18 @@ class DriverManager {
       tasks.push(agent.run());
     }
 
-    await Promise.allSettled(tasks);
+    const results = await Promise.allSettled(tasks);
+    for (let index = 0; index < results.length; index += 1) {
+      const result = results[index];
+      if (result.status === "rejected") {
+        this.metrics.recordApiError(result.reason, {
+          agentType: "driver",
+          agentId: index + 1,
+          phase: "agent_startup",
+        });
+      }
+    }
+    return results;
   }
 
   stop() {

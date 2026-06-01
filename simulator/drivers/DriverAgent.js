@@ -219,7 +219,7 @@ class DriverAgent {
       actualDurationSeconds: randInt(240, 1800),
       finalFareAmount: Number((randInt(8, 45) + Math.random()).toFixed(2)),
     });
-    this.metrics.inc("rides_completed");
+    this.metrics.markRideCompleted(rideId);
   }
 
   async run() {
@@ -257,7 +257,14 @@ class DriverAgent {
             await this.updateLocation();
           }
         } catch (err) {
-          this.metrics.inc("api_errors");
+          if (this.abortSignal?.aborted || err?.code === "ABORT_ERR" || err?.message === "Aborted") {
+            break;
+          }
+          this.metrics.recordApiError(err, {
+            agentType: "driver",
+            agentId: this.id,
+            phase: "run_loop",
+          });
           this.logger.warn(`[DRIVER ${this.id}] error: ${err.message}`);
           await sleep(1000, this.abortSignal);
         }

@@ -10,6 +10,7 @@
     "simulate:drivers": "DRIVER_COUNT=100 CUSTOMER_COUNT=0 node simulator/simulator.js",
     "simulate:customers": "DRIVER_COUNT=0 CUSTOMER_COUNT=500 node simulator/simulator.js",
     "simulate:chaos": "ENABLE_CHAOS_MODE=true node simulator/simulator.js",
+    "simulate:cleanup": "node scripts/simulate-cleanup.js",
     "migrate:make": "npx knex migrate:make",
     "migrate:latest": "npx knex migrate:latest",
     "migrate:rollback": "npx knex migrate:rollback",

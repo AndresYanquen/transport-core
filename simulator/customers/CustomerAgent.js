@@ -119,7 +119,12 @@ class CustomerAgent {
       this.logger.info(`[CUSTOMER ${this.id}] cancelled ride ${this.currentRideId}`);
       return true;
     } catch (err) {
-      this.metrics.inc("api_errors");
+      this.metrics.recordApiError(err, {
+        agentType: "customer",
+        agentId: this.id,
+        phase: "cancel_ride",
+        rideId: this.currentRideId,
+      });
       this.logger.warn(`[CUSTOMER ${this.id}] cancel failed: ${err.message}`);
       return false;
     }
@@ -141,8 +146,7 @@ class CustomerAgent {
       }
 
       if (status === "completed") {
-        this.metrics.inc("rides_completed");
-        this.metrics.setRideInactive(rideId);
+        this.metrics.markRideCompleted(rideId);
         return;
       }
 
@@ -190,8 +194,7 @@ class CustomerAgent {
       }
 
       if (status === "completed") {
-        this.metrics.inc("rides_completed");
-        this.metrics.setRideInactive(rideId);
+        this.metrics.markRideCompleted(rideId);
         return;
       }
 
@@ -209,7 +212,15 @@ class CustomerAgent {
         try {
           status = await httpSync();
         } catch (err) {
-          this.metrics.inc("api_errors");
+          if (this.abortSignal?.aborted || err?.code === "ABORT_ERR" || err?.message === "Aborted") {
+            return;
+          }
+          this.metrics.recordApiError(err, {
+            agentType: "customer",
+            agentId: this.id,
+            phase: "ride_sync",
+            rideId,
+          });
           this.logger.warn(`[CUSTOMER ${this.id}] ride sync failed: ${err.message}`);
         }
       }
@@ -239,7 +250,15 @@ class CustomerAgent {
         try {
           await this.runOnce();
         } catch (err) {
-          this.metrics.inc("api_errors");
+          if (this.abortSignal?.aborted || err?.code === "ABORT_ERR" || err?.message === "Aborted") {
+            break;
+          }
+          this.metrics.recordApiError(err, {
+            agentType: "customer",
+            agentId: this.id,
+            phase: "run_once",
+            rideId: this.currentRideId,
+          });
           this.logger.warn(`[CUSTOMER ${this.id}] error: ${err.message}`);
           await sleep(1000, this.abortSignal);
         }

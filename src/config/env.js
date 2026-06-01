@@ -95,6 +95,9 @@ const env = {
     enabled: parseBoolean(process.env.SOCKET_ENABLED, true),
     path: process.env.SOCKET_PATH || "/socket.io",
   },
+  google: {
+    mapsApiKey: process.env.GOOGLE_MAPS_API_KEY || "",
+  },
 };
 
 module.exports = { env };

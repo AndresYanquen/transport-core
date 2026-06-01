@@ -80,7 +80,11 @@ class ApiClient {
             `HTTP ${res.status} ${method.toUpperCase()} ${path}`
           );
           err.status = res.status;
+          err.method = method.toUpperCase();
+          err.path = path;
+          err.url = `${this.baseUrl}${path}`;
           err.response = res;
+          err.responseBody = res.data;
           err.durationMs = ms;
           throw err;
         }
@@ -112,6 +116,12 @@ class ApiClient {
           `API error ${method.toUpperCase()} ${path} after ${attempt} attempts (${ms}ms): `,
           error.message
         );
+        error.method = error.method || method.toUpperCase();
+        error.path = error.path || path;
+        error.url = error.url || `${this.baseUrl}${path}`;
+        error.status = error.status || error.response?.status || null;
+        error.responseBody = error.responseBody ?? error.response?.data ?? null;
+        error.durationMs = error.durationMs ?? ms;
         throw error;
       }
     }

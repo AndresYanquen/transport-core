@@ -5,6 +5,8 @@ const AuthClient = require("./core/AuthClient");
 const DriverManager = require("./drivers/DriverManager");
 const CustomerManager = require("./customers/CustomerManager");
 const MetricsCollector = require("./metrics/MetricsCollector");
+const { evaluateSimulation } = require("./metrics/evaluateSimulation");
+const { ensureSimulationUsers } = require("./setup/ensureSimulationUsers");
 const { sleep } = require("./utils/sleep");
 
 function buildApiClientFactory(config) {
@@ -87,6 +89,15 @@ async function main() {
     `[SIMULATOR] baseUrl=${config.apiBaseUrl} drivers=${config.driverCount} customers=${config.customerCount} durationMs=${config.simulationDurationMs} sockets=${config.enableSockets}`
   );
 
+  if (config.autoSeedUsers) {
+    await ensureSimulationUsers({
+      driverCount: config.driverCount,
+      customerCount: config.customerCount,
+      password: config.users.password,
+      logger,
+    });
+  }
+
   const metricsTimer = setInterval(() => metrics.printLive(), config.metricsPrintIntervalMs);
 
   const driverTask = config.driverCount > 0 ? driverManager.start() : Promise.resolve();
@@ -103,11 +114,46 @@ async function main() {
   })();
 
   await Promise.race([work, endTimer]);
+  shutdown();
+  const managerResults = await work;
+  if (forceExitTimer !== null) {
+    clearTimeout(forceExitTimer);
+  }
 
   clearInterval(metricsTimer);
   metrics.printLive();
-  logger.info("[SIMULATOR] final summary: ", JSON.stringify(metrics.summary()));
+  let summary = metrics.summary();
+  const errorReportPath = metrics.writeErrorReport(summary);
+  summary = metrics.summary();
+  logger.info("[SIMULATOR] final summary: ", JSON.stringify(summary));
+  if (errorReportPath) {
+    logger.info(`[SIMULATOR] error report: ${errorReportPath}`);
+  }
+
+  const agentFailures = collectAgentFailures(managerResults);
+  const evaluation = evaluateSimulation({ summary, config, agentFailures });
+  logger.info("[SIMULATOR] evaluation: ", JSON.stringify(evaluation));
+  if (config.success.assert && !evaluation.pass) {
+    process.exitCode = 1;
+  }
   metrics.close();
+}
+
+function collectAgentFailures(managerResults) {
+  const failures = [];
+  for (const managerResult of managerResults || []) {
+    if (managerResult.status === "rejected") {
+      failures.push({ scope: "manager", reason: String(managerResult.reason?.message || managerResult.reason) });
+      continue;
+    }
+
+    for (const agentResult of managerResult.value || []) {
+      if (agentResult.status === "rejected") {
+        failures.push({ scope: "agent", reason: String(agentResult.reason?.message || agentResult.reason) });
+      }
+    }
+  }
+  return failures;
 }
 
 main().catch((err) => {
