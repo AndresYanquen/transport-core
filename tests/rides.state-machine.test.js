@@ -10,7 +10,11 @@ const {
   assertTransitionAllowed,
 } = require("../src/modules/rides/utils/ride-state-machine");
 
-const { buildTransitionPlan, validateTransitionPayload } = RideService.__private;
+const {
+  buildTransitionPlan,
+  isActiveRideUniqueViolation,
+  validateTransitionPayload,
+} = RideService.__private;
 
 function buildRideRow(overrides = {}) {
   return {
@@ -105,4 +109,52 @@ test("pending_driver clears assigned driver", () => {
 
   assert.equal(plan.updateFields.status, RideStatus.PENDING_DRIVER);
   assert.equal(plan.updateFields.driver_id, null);
+});
+
+test("active ride unique index violations are treated as business conflicts", () => {
+  assert.equal(
+    isActiveRideUniqueViolation({
+      code: "23505",
+      constraint: "rides_one_active_per_client_idx",
+    }),
+    true
+  );
+
+  assert.equal(
+    isActiveRideUniqueViolation({
+      code: "23505",
+      constraint: "rides_payment_reference_unique",
+    }),
+    false
+  );
+});
+
+test("same-status transitions are audit no-ops", async () => {
+  const rideRow = buildRideRow({
+    id: "ride-1",
+    status: RideStatus.DRIVER_EN_ROUTE,
+  });
+  const calls = [];
+  const dbClient = {
+    async query(sql) {
+      calls.push(sql);
+      return { rows: [rideRow] };
+    },
+  };
+
+  const result = await RideService.__private.transitionRide(dbClient, {
+    rideId: "ride-1",
+    toStatus: RideStatus.DRIVER_EN_ROUTE,
+    actorType: RideActorType.DRIVER,
+    actorId: "driver-1",
+    driverId: "driver-1",
+  });
+
+  assert.equal(result.statusChanged, false);
+  assert.equal(result.idempotent, true);
+  assert.equal(result.event, null);
+  assert.equal(
+    calls.some((sql) => String(sql).includes("INSERT INTO ride_events")),
+    false
+  );
 });

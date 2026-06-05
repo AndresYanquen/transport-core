@@ -539,6 +539,8 @@ function clearTimeFilters() {
           <select v-model="filters.driverStatus" class="rounded border border-slate-200 px-2 py-1 font-mono text-xs">
             <option value="any">any</option>
             <option value="online">online</option>
+            <option value="busy">busy</option>
+            <option value="unavailable">unavailable</option>
             <option value="offline">offline</option>
           </select>
           <span class="font-mono text-[11px] text-slate-500">showing={{ filteredDrivers.length }}</span>

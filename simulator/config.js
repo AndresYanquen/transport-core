@@ -18,6 +18,9 @@ const DEFAULTS = {
   MAX_CONCURRENT_CUSTOMERS: 50,
   SHUTDOWN_FORCE_EXIT_MS: 4000,
   SIM_AUTO_SEED_USERS: true,
+  SIM_RUN_BACKEND_RACE_TEST: false,
+  SIM_RUN_BACKEND_RETRY_TEST: false,
+  SIM_RUN_BACKEND_MATCHING_TEST: false,
   SIM_ASSERT_SUCCESS: false,
   SIM_MAX_API_ERRORS: 0,
   SIM_MAX_API_ERROR_RATE: 0,
@@ -71,7 +74,10 @@ function loadConfig() {
       process.env.CUSTOMER_CANCEL_RATE,
       DEFAULTS.CUSTOMER_CANCEL_RATE
     ),
-    enableSockets: toBool(process.env.ENABLE_SOCKETS, DEFAULTS.ENABLE_SOCKETS),
+    enableSockets: toBool(
+      process.env.ENABLE_SOCKETS ?? process.env.SOCKET_ENABLED,
+      DEFAULTS.ENABLE_SOCKETS
+    ),
     enableChaosMode: toBool(process.env.ENABLE_CHAOS_MODE, DEFAULTS.ENABLE_CHAOS_MODE),
     metricsPrintIntervalMs: toNumber(
       process.env.METRICS_PRINT_INTERVAL_MS,
@@ -88,6 +94,18 @@ function loadConfig() {
       DEFAULTS.SHUTDOWN_FORCE_EXIT_MS
     ),
     autoSeedUsers: toBool(process.env.SIM_AUTO_SEED_USERS, DEFAULTS.SIM_AUTO_SEED_USERS),
+    runBackendRaceTest: toBool(
+      process.env.SIM_RUN_BACKEND_RACE_TEST,
+      DEFAULTS.SIM_RUN_BACKEND_RACE_TEST
+    ),
+    runBackendRetryTest: toBool(
+      process.env.SIM_RUN_BACKEND_RETRY_TEST,
+      DEFAULTS.SIM_RUN_BACKEND_RETRY_TEST
+    ),
+    runBackendMatchingTest: toBool(
+      process.env.SIM_RUN_BACKEND_MATCHING_TEST,
+      DEFAULTS.SIM_RUN_BACKEND_MATCHING_TEST
+    ),
     success: {
       assert: toBool(process.env.SIM_ASSERT_SUCCESS, DEFAULTS.SIM_ASSERT_SUCCESS),
       maxApiErrors: toNumber(process.env.SIM_MAX_API_ERRORS, DEFAULTS.SIM_MAX_API_ERRORS),

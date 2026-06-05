@@ -163,19 +163,15 @@ async function findAvailableDriversNear(pointWkt, {
     `
       SELECT
         ${BASE_DRIVER_FIELDS},
-        ST_DistanceSphere(
-          d.current_location::geometry,
-          ST_GeogFromText($1)::geometry
+        ST_Distance(
+          d.current_location,
+          ST_GeogFromText($1)
         ) AS distance_meters
       FROM drivers d
       JOIN users u ON u.id = d.user_id
       WHERE d.status = 'online'
         AND d.current_location IS NOT NULL
-        AND ST_DWithin(
-          d.current_location::geometry,
-          ST_GeogFromText($1)::geometry,
-          $2
-        )
+        AND ST_DWithin(d.current_location, ST_GeogFromText($1), $2)
         ${excludeClause}
       ORDER BY distance_meters ASC
       LIMIT $${limitIndex}

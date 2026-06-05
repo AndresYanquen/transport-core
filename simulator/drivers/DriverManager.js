@@ -40,6 +40,7 @@ class DriverManager {
     const results = await Promise.allSettled(tasks);
     for (let index = 0; index < results.length; index += 1) {
       const result = results[index];
+      if (isAbortResult(result)) continue;
       if (result.status === "rejected") {
         this.metrics.recordApiError(result.reason, {
           agentType: "driver",
@@ -55,6 +56,13 @@ class DriverManager {
     this.logger.info("[SIMULATOR] stopping drivers");
     this.abortController.abort();
   }
+}
+
+function isAbortResult(result) {
+  return (
+    result?.status === "rejected" &&
+    (result.reason?.code === "ABORT_ERR" || result.reason?.message === "Aborted")
+  );
 }
 
 module.exports = DriverManager;

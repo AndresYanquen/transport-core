@@ -1,5 +1,5 @@
 <script setup>
-import { Maximize2, Minus, Minimize2, Plus, RotateCcw } from "lucide-vue-next";
+import { Maximize2, Minus, Minimize2, Plus, RotateCcw, X } from "lucide-vue-next";
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 
 const props = defineProps({
@@ -11,6 +11,7 @@ const props = defineProps({
 const isFullscreen = ref(false);
 const zoomOffset = ref(0);
 const isDragging = ref(false);
+const selectedFeature = ref(null);
 const pan = reactive({
   x: 0,
   y: 0,
@@ -64,6 +65,58 @@ function resetPan() {
   pan.y = 0;
 }
 
+function closeDetails() {
+  selectedFeature.value = null;
+}
+
+function selectDriver(driver) {
+  selectedFeature.value = {
+    kind: "driver",
+    title: "Driver",
+    rows: [
+      ["driverId", shortId(driver?.userId)],
+      ["status", driver?.status || "-"],
+      ["currentRide", driver?.currentRideId ? shortId(driver.currentRideId) : "-"],
+      ["email", driver?.contact?.email || "-"],
+      ["updated", fmtDate(driver?.updatedAt)],
+      ["lat", fmtCoord(driver?.currentLocation?.lat)],
+      ["lng", fmtCoord(driver?.currentLocation?.lng)],
+      ["simUser", driver?.isSimUser ? "yes" : "no"],
+    ],
+  };
+}
+
+function selectRide(ride, pointType = "route") {
+  const point =
+    pointType === "pickup"
+      ? ride?.pickupLocation
+      : pointType === "dropoff"
+      ? ride?.dropoffLocation
+      : null;
+
+  selectedFeature.value = {
+    kind: "ride",
+    title:
+      pointType === "pickup"
+        ? "Ride pickup"
+        : pointType === "dropoff"
+        ? "Ride dropoff"
+        : "Ride route",
+    rows: [
+      ["rideId", shortId(ride?.id)],
+      ["status", ride?.status || "-"],
+      ["client", ride?.clientId ? shortId(ride.clientId) : "-"],
+      ["driver", ride?.driverId ? shortId(ride.driverId) : "-"],
+      ["pickup", ride?.pickupAddress || "-"],
+      ["dropoff", ride?.dropoffAddress || "-"],
+      ["requested", fmtDate(ride?.requestedAt)],
+      ["updated", fmtDate(ride?.updatedAt)],
+      ["lat", point ? fmtCoord(point.lat) : "-"],
+      ["lng", point ? fmtCoord(point.lng) : "-"],
+    ],
+  };
+}
+
 function startDrag(event) {
   if (event.button !== 0) return;
   isDragging.value = true;
@@ -85,6 +138,23 @@ function dragMap(event) {
 function stopDrag(event) {
   isDragging.value = false;
   event.currentTarget.releasePointerCapture?.(event.pointerId);
+}
+
+function shortId(id) {
+  if (!id) return "-";
+  const s = String(id);
+  return s.length > 14 ? `${s.slice(0, 8)}...${s.slice(-4)}` : s;
+}
+
+function fmtDate(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "-" : date.toLocaleTimeString();
+}
+
+function fmtCoord(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toFixed(6) : "-";
 }
 
 onMounted(() => {
@@ -171,9 +241,9 @@ const bounds = computed(() => {
 });
 
 function driverColor(d) {
-  if (d?.status !== "online") return "rgba(148,163,184,0.8)"; // slate
-  if (d?.currentRideId) return "rgba(239,68,68,0.9)"; // red
-  return "rgba(34,197,94,0.9)"; // green
+  if (d?.status === "busy" || d?.currentRideId) return "rgba(239,68,68,0.9)"; // red
+  if (d?.status === "online") return "rgba(34,197,94,0.9)"; // green
+  return "rgba(148,163,184,0.8)"; // slate
 }
 
 function rideColor(r) {
@@ -183,6 +253,14 @@ function rideColor(r) {
   if (s === "completed") return "rgba(16,185,129,0.7)";
   if (s === "pending_driver" || s === "requested") return "rgba(59,130,246,0.7)";
   return "rgba(245,158,11,0.8)";
+}
+
+function rideDasharray(r) {
+  const s = r?.status;
+  if (String(s || "").startsWith("canceled") || s === "no_show") return "2 5";
+  if (s === "completed") return "";
+  if (s === "pending_driver" || s === "requested") return "6 4";
+  return "10 5";
 }
 
 const svgWidth = computed(() => (isFullscreen.value ? viewport.width : 900));
@@ -332,6 +410,7 @@ const livePointCount = computed(() => pickPoints().length);
       </div>
     </div>
     <div :class="['p-2', isFullscreen ? 'flex min-h-0 flex-1 flex-col' : '']">
+      <div class="relative">
       <svg
         :width="svgWidth"
         :height="svgHeight"
@@ -374,9 +453,22 @@ const livePointCount = computed(() => pickPoints().length);
             :y1="pr.pickupP.y"
             :x2="pr.dropoffP.x"
             :y2="pr.dropoffP.y"
+            stroke="transparent"
+            stroke-width="14"
+            class="cursor-pointer"
+            @pointerdown.stop
+            @click.stop="selectRide(pr.r, 'route')"
+          />
+          <line
+            v-if="pr.pickupP && pr.dropoffP"
+            :x1="pr.pickupP.x"
+            :y1="pr.pickupP.y"
+            :x2="pr.dropoffP.x"
+            :y2="pr.dropoffP.y"
             :stroke="rideColor(pr.r)"
             stroke-width="2"
-            stroke-dasharray="6 4"
+            :stroke-dasharray="rideDasharray(pr.r)"
+            pointer-events="none"
           />
           <circle
             v-if="pr.pickupP"
@@ -387,6 +479,9 @@ const livePointCount = computed(() => pickPoints().length);
             stroke="white"
             stroke-width="2"
             filter="url(#markerShadow)"
+            class="cursor-pointer"
+            @pointerdown.stop
+            @click.stop="selectRide(pr.r, 'pickup')"
           />
           <circle
             v-if="pr.dropoffP"
@@ -397,6 +492,9 @@ const livePointCount = computed(() => pickPoints().length);
             stroke="white"
             stroke-width="2"
             filter="url(#markerShadow)"
+            class="cursor-pointer"
+            @pointerdown.stop
+            @click.stop="selectRide(pr.r, 'dropoff')"
           />
         </g>
 
@@ -409,11 +507,46 @@ const livePointCount = computed(() => pickPoints().length);
             stroke="white"
             stroke-width="2"
             filter="url(#markerShadow)"
+            class="cursor-pointer"
+            @pointerdown.stop
+            @click.stop="selectDriver(pd.d)"
           />
         </g>
       </svg>
 
-      <div class="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-600 sm:grid-cols-4">
+      <div
+        v-if="selectedFeature"
+        class="absolute right-3 top-3 max-h-[calc(100%-24px)] w-[min(360px,calc(100%-24px))] overflow-auto rounded border border-slate-200 bg-white/95 p-3 text-xs shadow-lg backdrop-blur"
+      >
+        <div class="mb-2 flex items-start justify-between gap-3">
+          <div>
+            <div class="font-mono text-[11px] uppercase tracking-wide text-slate-500">{{ selectedFeature.kind }}</div>
+            <div class="font-semibold text-slate-900">{{ selectedFeature.title }}</div>
+          </div>
+          <button
+            type="button"
+            class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-slate-200 text-slate-600 hover:bg-slate-50"
+            aria-label="Close map details"
+            title="Close"
+            @click="closeDetails"
+          >
+            <X class="h-4 w-4" />
+          </button>
+        </div>
+        <dl class="grid gap-1 font-mono">
+          <div
+            v-for="[label, value] in selectedFeature.rows"
+            :key="label"
+            class="grid grid-cols-[92px_minmax(0,1fr)] gap-2 border-t border-slate-100 py-1.5"
+          >
+            <dt class="text-slate-500">{{ label }}</dt>
+            <dd class="break-words text-slate-900">{{ value }}</dd>
+          </div>
+        </dl>
+      </div>
+      </div>
+
+      <div class="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-600 md:grid-cols-4 xl:grid-cols-8">
         <div class="flex items-center gap-2">
           <span class="inline-block h-2 w-2 rounded-full bg-green-500"></span>
           <span>Driver available</span>
@@ -424,11 +557,39 @@ const livePointCount = computed(() => pickPoints().length);
         </div>
         <div class="flex items-center gap-2">
           <span class="inline-block h-2 w-2 rounded-full bg-slate-400"></span>
-          <span>Driver offline</span>
+          <span>Driver offline/unavailable</span>
         </div>
         <div class="flex items-center gap-2">
           <span class="inline-block h-2 w-2 rounded-full bg-blue-500"></span>
           <span>Pickup</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="inline-block h-2 w-2 rounded-full bg-amber-500"></span>
+          <span>Dropoff</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <svg width="24" height="8" aria-hidden="true">
+            <line x1="0" y1="4" x2="24" y2="4" stroke="rgb(59,130,246)" stroke-width="2" stroke-dasharray="6 4" />
+          </svg>
+          <span>Pending/requested route</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <svg width="24" height="8" aria-hidden="true">
+            <line x1="0" y1="4" x2="24" y2="4" stroke="rgb(245,158,11)" stroke-width="2" stroke-dasharray="10 5" />
+          </svg>
+          <span>Active route</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <svg width="24" height="8" aria-hidden="true">
+            <line x1="0" y1="4" x2="24" y2="4" stroke="rgb(16,185,129)" stroke-width="2" />
+          </svg>
+          <span>Completed route</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <svg width="24" height="8" aria-hidden="true">
+            <line x1="0" y1="4" x2="24" y2="4" stroke="rgb(148,163,184)" stroke-width="2" stroke-dasharray="2 5" />
+          </svg>
+          <span>Canceled/no-show</span>
         </div>
       </div>
     </div>

@@ -136,10 +136,56 @@ function emitDriverInviteResponded({
   safeRealtimeEmit(() => emitToRide(ride.id, "ride:invite-responded", payload));
 }
 
+function emitDriverInvitesExpired({
+  ride,
+  invites,
+  event = null,
+  pendingInvites = undefined,
+  reason,
+}) {
+  if (!ride?.id || !Array.isArray(invites) || !invites.length) {
+    return;
+  }
+
+  invites.forEach((invite) => {
+    emitDriverInviteResponded({
+      ride,
+      invite: {
+        ...invite,
+        status: RideInviteStatus.EXPIRED,
+      },
+      event,
+      pendingInvites,
+    });
+
+    safeRealtimeEmit(() =>
+      emitToUser(invite.driverId, "ride:status-updated", {
+        rideId: ride.id,
+        previousStatus: null,
+        ride,
+        event,
+        invite: {
+          ...invite,
+          status: RideInviteStatus.EXPIRED,
+        },
+        reason,
+        emittedAt: new Date().toISOString(),
+      })
+    );
+  });
+}
+
 function createHttpError(status, message) {
   const error = new Error(message);
   error.status = status;
   return error;
+}
+
+function isActiveRideUniqueViolation(error) {
+  return (
+    error?.code === "23505" &&
+    error?.constraint === "rides_one_active_per_client_idx"
+  );
 }
 
 function normalizeActorType(actorType, fallback = RideActorType.SYSTEM) {
@@ -456,6 +502,16 @@ async function transitionRide(dbClient, {
     );
   }
 
+  if (currentRow.status === toStatus) {
+    return {
+      ride: RideModel.mapRideRow(currentRow),
+      event: null,
+      previousStatus: currentRow.status,
+      statusChanged: false,
+      idempotent: true,
+    };
+  }
+
   assertTransitionAllowed({
     fromStatus: currentRow.status,
     toStatus,
@@ -504,6 +560,8 @@ async function transitionRide(dbClient, {
     ride: RideModel.mapRideRow(updatedRow),
     event: RideModel.mapEventRow(eventRow),
     previousStatus: currentRow.status,
+    statusChanged: true,
+    idempotent: false,
   };
 }
 
@@ -568,6 +626,14 @@ async function createRide({
   const dbClient = await pool.connect();
   try {
     await dbClient.query("BEGIN");
+
+    const activeRideRow = await RideModel.getActiveRideByClientId(dbClient, clientId, {
+      forUpdate: true,
+    });
+
+    if (activeRideRow) {
+      throw createHttpError(409, "Client already has an active ride.");
+    }
 
     const rideRow = await RideModel.insertRide(dbClient, {
       clientId,
@@ -640,6 +706,9 @@ async function createRide({
     }
   } catch (error) {
     await dbClient.query("ROLLBACK");
+    if (isActiveRideUniqueViolation(error)) {
+      throw createHttpError(409, "Client already has an active ride.");
+    }
     throw error;
   } finally {
     dbClient.release();
@@ -894,8 +963,16 @@ async function respondDriverAssignment({
     }
 
     let result;
+    let invitesToExpireForRealtime = [];
 
     if (normalizedAction === "accept") {
+      const pendingInvitesBeforeAccept = await RideModel.listDriverInvites(dbClient, rideId, {
+        statuses: [RideInviteStatus.PENDING],
+      });
+      invitesToExpireForRealtime = pendingInvitesBeforeAccept.filter(
+        (pendingInvite) => pendingInvite.driverId !== driverId
+      );
+
       result = await transitionRide(dbClient, {
         rideId,
         toStatus: RideStatus.DRIVER_ASSIGNED,
@@ -960,6 +1037,14 @@ async function respondDriverAssignment({
         },
         event: response.event,
         pendingInvites: response.pendingInvites,
+      });
+
+      emitDriverInvitesExpired({
+        ride: response.ride,
+        invites: invitesToExpireForRealtime,
+        event: response.event,
+        pendingInvites: response.pendingInvites,
+        reason: "accepted_by_another_driver",
       });
     } else {
       emitDriverInviteResponded({
@@ -1049,11 +1134,13 @@ async function driverProgress({
 
     await dbClient.query("COMMIT");
 
-    await emitRideStatusUpdated({
-      ride: result.ride,
-      event: result.event,
-      previousStatus: result.previousStatus,
-    });
+    if (result.statusChanged) {
+      await emitRideStatusUpdated({
+        ride: result.ride,
+        event: result.event,
+        previousStatus: result.previousStatus,
+      });
+    }
 
     return result;
   } catch (error) {
@@ -1092,6 +1179,12 @@ async function updateRideStatus({
   const dbClient = await pool.connect();
   try {
     await dbClient.query("BEGIN");
+    const pendingInvitesBeforeTerminalTransition = TERMINAL_RIDE_STATUSES.has(nextStatus)
+      ? await RideModel.listDriverInvites(dbClient, rideId, {
+          statuses: [RideInviteStatus.PENDING],
+        })
+      : [];
+
     const result = await transitionRide(dbClient, {
       rideId,
       toStatus: nextStatus,
@@ -1109,15 +1202,24 @@ async function updateRideStatus({
     });
     await dbClient.query("COMMIT");
 
-    await emitRideStatusUpdated({
+    if (result.statusChanged) {
+      await emitRideStatusUpdated({
+        ride: result.ride,
+        event: result.event,
+        previousStatus: result.previousStatus,
+      });
+    }
+
+    emitDriverInvitesExpired({
       ride: result.ride,
+      invites: pendingInvitesBeforeTerminalTransition,
       event: result.event,
-      previousStatus: result.previousStatus,
+      pendingInvites: [],
+      reason: nextStatus,
     });
 
     return {
       ...result,
-      statusChanged: true,
     };
   } catch (error) {
     await dbClient.query("ROLLBACK");
@@ -1360,6 +1462,8 @@ module.exports = {
   listDriverInvites,
   __private: {
     buildTransitionPlan,
+    isActiveRideUniqueViolation,
+    transitionRide,
     validateTransitionPayload,
     normalizeActorType,
   },

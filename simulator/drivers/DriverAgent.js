@@ -81,7 +81,7 @@ class DriverAgent {
   async subscribeRideRoom(rideId) {
     if (!this.config.enableSockets || !this.socketClient) return;
     try {
-      await this.socketClient.subscribeRide(rideId, { timeoutMs: 5000 });
+      await this.socketClient.subscribeRide(rideId, { timeoutMs: 10000 });
     } catch (err) {
       this.logger.warn(`[DRIVER ${this.id}] socket ride:subscribe failed for ${rideId}: ${err.message}`);
     }
@@ -139,10 +139,29 @@ class DriverAgent {
     const accept = chance(this.config.driverAcceptanceRate);
     const action = accept ? "accept" : "reject";
     const path = this.config.endpoints.driverResponsePathTemplate.replace(":rideId", rideId);
-    const { durationMs } = await this.api.patch(path, {
+    const { data, durationMs } = await this.api.patch(path, {
       body: { action },
     });
     this.metrics.observeTiming("api_request_ms", durationMs);
+
+    if (data?.ignored) {
+      this.metrics.inc("rides_response_ignored");
+      this.pendingInvites = this.pendingInvites.filter((pending) => {
+        const pendingRideId = pending.rideId || pending.ride_id || pending.ride?.id;
+        return pendingRideId !== rideId;
+      });
+      return null;
+    }
+
+    const assignedDriverId = data?.ride?.driverId || data?.ride?.driver_id;
+    if (accept && assignedDriverId && assignedDriverId !== this.user?.id) {
+      this.metrics.inc("rides_response_ignored");
+      this.logger.warn(
+        `[DRIVER ${this.id}] accepted invite ${rideId} but ride is assigned to ${assignedDriverId}`
+      );
+      return null;
+    }
+
     this.metrics.inc(accept ? "rides_accepted" : "rides_rejected");
     if (accept) {
       await this.subscribeRideRoom(rideId);

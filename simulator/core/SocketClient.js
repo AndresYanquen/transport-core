@@ -6,6 +6,7 @@ class SocketClient {
     this.path = path;
     this.logger = logger;
     this.socket = null;
+    this.readyPromise = null;
   }
 
   static load() {
@@ -24,6 +25,26 @@ class SocketClient {
       auth: { token },
       // Prefer websocket, but allow upgrade fallback (some environments block ws).
       transports: ["websocket", "polling"],
+    });
+
+    this.readyPromise = new Promise((resolve) => {
+      if (this.socket.connected) {
+        resolve();
+        return;
+      }
+
+      const onReady = () => {
+        cleanup();
+        resolve();
+      };
+
+      const cleanup = () => {
+        this.socket.off("connect", onReady);
+        this.socket.off("realtime:ready", onReady);
+      };
+
+      this.socket.on("connect", onReady);
+      this.socket.on("realtime:ready", onReady);
     });
 
     this.socket.on("connect_error", (err) => {
@@ -52,6 +73,8 @@ class SocketClient {
     if (!this.socket) {
       throw new Error("Socket not connected");
     }
+
+    await this.waitUntilReady({ timeoutMs });
 
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -85,10 +108,28 @@ class SocketClient {
     });
   }
 
+  async waitUntilReady({ timeoutMs = 4000 } = {}) {
+    if (!this.socket) {
+      throw new Error("Socket not connected");
+    }
+
+    if (this.socket.connected) {
+      return;
+    }
+
+    await Promise.race([
+      this.readyPromise,
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error("socket ready timeout")), timeoutMs);
+      }),
+    ]);
+  }
+
   disconnect() {
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
+      this.readyPromise = null;
     }
   }
 }

@@ -7,6 +7,9 @@ const CustomerManager = require("./customers/CustomerManager");
 const MetricsCollector = require("./metrics/MetricsCollector");
 const { evaluateSimulation } = require("./metrics/evaluateSimulation");
 const { ensureSimulationUsers } = require("./setup/ensureSimulationUsers");
+const { runBackendRaceTest } = require("./backendRaceTest");
+const { runBackendRetryTest } = require("./backendRetryTest");
+const { runBackendMatchingTest } = require("./backendMatchingTest");
 const { sleep } = require("./utils/sleep");
 
 function buildApiClientFactory(config) {
@@ -98,6 +101,33 @@ async function main() {
     });
   }
 
+  if (config.runBackendRaceTest) {
+    await runBackendRaceTest({
+      config,
+      logger,
+      metrics,
+      ensureUsers: !config.autoSeedUsers,
+    });
+  }
+
+  if (config.runBackendRetryTest) {
+    await runBackendRetryTest({
+      config,
+      logger,
+      metrics,
+      ensureUsers: !config.autoSeedUsers,
+    });
+  }
+
+  if (config.runBackendMatchingTest) {
+    await runBackendMatchingTest({
+      config,
+      logger,
+      metrics,
+      ensureUsers: !config.autoSeedUsers,
+    });
+  }
+
   const metricsTimer = setInterval(() => metrics.printLive(), config.metricsPrintIntervalMs);
 
   const driverTask = config.driverCount > 0 ? driverManager.start() : Promise.resolve();
@@ -148,12 +178,17 @@ function collectAgentFailures(managerResults) {
     }
 
     for (const agentResult of managerResult.value || []) {
+      if (isAbortReason(agentResult.reason)) continue;
       if (agentResult.status === "rejected") {
         failures.push({ scope: "agent", reason: String(agentResult.reason?.message || agentResult.reason) });
       }
     }
   }
   return failures;
+}
+
+function isAbortReason(reason) {
+  return reason?.code === "ABORT_ERR" || reason?.message === "Aborted";
 }
 
 main().catch((err) => {

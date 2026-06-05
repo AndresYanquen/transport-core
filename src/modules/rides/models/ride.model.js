@@ -318,6 +318,25 @@ class RideModel {
     return rows[0] ?? null;
   }
 
+  static async getActiveRideByClientId(dbClient, clientId, { forUpdate = false } = {}) {
+    const executor = getExecutor(dbClient);
+    const terminalStatuses = Array.from(TERMINAL_RIDE_STATUSES);
+    const { rows } = await executor.query(
+      `
+        SELECT ${BASE_RIDE_FIELDS}
+        FROM rides
+        WHERE client_id = $1
+          AND status <> ALL($2::text[])
+        ORDER BY updated_at DESC
+        LIMIT 1
+        ${forUpdate ? "FOR UPDATE" : ""}
+      `,
+      [clientId, terminalStatuses]
+    );
+
+    return rows[0] ?? null;
+  }
+
   static async listRideEvents(rideId, { limit = 20, offset = 0 } = {}, dbClient) {
     const executor = getExecutor(dbClient);
     const { rows } = await executor.query(

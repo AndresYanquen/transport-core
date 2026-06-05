@@ -51,7 +51,7 @@ class CustomerAgent {
   async subscribeRideRoom(rideId) {
     if (!this.config.enableSockets || !this.socketClient) return;
     try {
-      await this.socketClient.subscribeRide(rideId, { timeoutMs: 5000 });
+      await this.socketClient.subscribeRide(rideId, { timeoutMs: 10000 });
     } catch (err) {
       // Don't fail simulation if subscribe is forbidden/missing. We'll fallback to polling.
       this.logger.warn(

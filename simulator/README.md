@@ -43,9 +43,12 @@ Key environment variables:
 - `SIMULATION_DURATION_MS` (default `600000`)
 - `DRIVER_ACCEPTANCE_RATE` (default `0.75`)
 - `CUSTOMER_CANCEL_RATE` (default `0.08`)
-- `ENABLE_SOCKETS` (default `false`)
+- `ENABLE_SOCKETS` (default `false`; falls back to `SOCKET_ENABLED` when unset)
 - `ENABLE_CHAOS_MODE` (default `false`)
 - `SIM_AUTO_SEED_USERS` (default `true`)
+- `SIM_RUN_BACKEND_RACE_TEST` (default `false`)
+- `SIM_RUN_BACKEND_RETRY_TEST` (default `false`)
+- `SIM_RUN_BACKEND_MATCHING_TEST` (default `false`)
 - `SIM_ASSERT_SUCCESS` (default `false`)
 - `SIM_MAX_API_ERRORS` (default `0`)
 - `SIM_MAX_API_ERROR_RATE` (default `0`)
@@ -63,6 +66,10 @@ If `ENABLE_SOCKETS=true`, agents will connect via Socket.IO using `handshake.aut
 - Customers subscribe to the ride room via `ride:subscribe` and consume `ride:status-updated`
 
 If the backend does not emit these events, agents will fallback to periodic HTTP sync.
+
+The backend uses `SOCKET_ENABLED`; the simulator uses `ENABLE_SOCKETS` and falls back to `SOCKET_ENABLED` if `ENABLE_SOCKETS` is not set. To force simulator sockets explicitly:
+
+- `ENABLE_SOCKETS=true npm run simulate`
 
 Endpoint path overrides (defaults match this backend):
 
@@ -93,6 +100,18 @@ Driver agents log in, go online, send GPS updates, receive or poll ride invites,
 Customer agents log in, create ride requests, poll or subscribe for ride status updates, and may cancel rides according to `CUSTOMER_CANCEL_RATE`.
 
 Before starting agents, this command ensures the required simulator users exist in the configured database and updates their simulator password to `SIM_USER_PASSWORD`.
+
+To include the backend race test before agents start, run it with:
+
+- `SIM_RUN_BACKEND_RACE_TEST=true npm run simulate`
+
+To include duplicate mobile retry checks before agents start, run it with:
+
+- `SIM_RUN_BACKEND_RETRY_TEST=true npm run simulate`
+
+To include driver matching checks before agents start, run it with:
+
+- `SIM_RUN_BACKEND_MATCHING_TEST=true npm run simulate`
 
 To make the command fail when the backend does not meet the simulator criteria, run it with:
 
@@ -129,6 +148,37 @@ This command sets:
 - `ENABLE_CHAOS_MODE=true`
 
 Chaos mode keeps the same driver/customer defaults unless you override them with environment variables. Use it to exercise less predictable flows and stress behavior while still using the normal backend APIs.
+
+### `npm run simulate:race`
+
+Runs a targeted backend race test. It creates one ride with two pending driver invites and sends two concurrent `PATCH /api/rides/:rideId/driver-response` requests with `action=accept`.
+
+Expected result:
+
+- exactly one driver wins and the ride is assigned to that driver
+- the other driver receives a controlled ignored response, not an unhandled backend error
+
+### `npm run simulate:retries`
+
+Runs targeted duplicate-request checks for mobile retry behavior.
+
+It validates these repeated requests:
+
+- create ride twice: second request receives controlled `409`
+- accept invite twice: second request is idempotent
+- advance ride status twice: second request is controlled and keeps the same status
+- cancel ride twice: second request is controlled and keeps the canceled status
+
+### `npm run simulate:matching`
+
+Runs targeted driver matching checks.
+
+It validates that ride assignment:
+
+- invites the closest online drivers first
+- excludes offline drivers
+- excludes busy drivers
+- excludes drivers outside the assignment radius
 
 ### `npm run simulate:cleanup`
 

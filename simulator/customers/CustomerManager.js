@@ -48,6 +48,7 @@ class CustomerManager {
     const results = await Promise.allSettled(tasks);
     for (let index = 0; index < results.length; index += 1) {
       const result = results[index];
+      if (isAbortResult(result)) continue;
       if (result.status === "rejected") {
         this.metrics.recordApiError(result.reason, {
           agentType: "customer",
@@ -63,6 +64,13 @@ class CustomerManager {
     this.logger.info("[SIMULATOR] stopping customers");
     this.abortController.abort();
   }
+}
+
+function isAbortResult(result) {
+  return (
+    result?.status === "rejected" &&
+    (result.reason?.code === "ABORT_ERR" || result.reason?.message === "Aborted")
+  );
 }
 
 module.exports = CustomerManager;

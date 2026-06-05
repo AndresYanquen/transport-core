@@ -200,10 +200,10 @@ async function getSimulationState({ limit = 200, from = null, to = null } = {}) 
   }));
 
   const driverTotal = drivers.length;
-  const driverOnline = drivers.filter((d) => d.status === "online").length;
-  const driverOffline = drivers.filter((d) => d.status !== "online").length;
-  const driverBusy = drivers.filter((d) => d.status === "online" && d.currentRideId).length;
+  const driverBusy = drivers.filter((d) => d.status === "busy" || d.currentRideId).length;
   const driverAvailable = drivers.filter((d) => d.status === "online" && !d.currentRideId).length;
+  const driverOnline = driverAvailable + driverBusy;
+  const driverOffline = drivers.filter((d) => d.status === "offline").length;
 
   const rideCounts = {};
   for (const ride of rides) {
