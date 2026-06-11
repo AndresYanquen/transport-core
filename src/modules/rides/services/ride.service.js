@@ -17,6 +17,7 @@ const {
 const { applyTransitionSideEffects } = require("./ride-effects.service");
 const { emitToRide, emitToUser } = require("../../../realtime/socket.server");
 const RideRatingService = require("./ride-rating.service");
+const { env } = require("../../../config");
 
 const pool = RideModel.getPool();
 
@@ -585,7 +586,7 @@ async function createRide({
   actorId,
   metadata,
   autoAssign = true,
-  autoAssignRadiusMeters = 5000,
+  autoAssignRadiusMeters = env.matching.clientDriverSearchRadiusMeters,
   autoAssignLimit = 5,
 }) {
   if (!clientId) {
@@ -718,7 +719,7 @@ async function createRide({
 async function assignDriver({
   rideId,
   driverId,
-  radiusMeters = 5000,
+  radiusMeters = env.matching.clientDriverSearchRadiusMeters,
   limit = 5,
   actorType,
   actorId,
@@ -1393,6 +1394,7 @@ async function listDriverInvites(filters = {}, viewer = null) {
   return {
     invites: rows.map((row) => ({
       ...row.invite,
+      pickupDistanceMeters: row.pickupDistanceMeters,
       ride: row.ride,
     })),
   };

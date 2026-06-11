@@ -637,19 +637,21 @@ class RideModel {
           i.status AS invite_status,
           i.invited_at AS invite_invited_at,
           i.responded_at AS invite_responded_at,
+          ST_Distance(r.pickup_point, d.current_location) AS pickup_distance_meters,
           r.*,
           cu.first_name AS client_first_name,
           cu.last_name AS client_last_name,
           cu.email AS client_email,
           cu.phone_number AS client_phone_number
         FROM ride_driver_invites i
+        JOIN drivers d ON d.user_id = i.driver_id
         JOIN (
-          SELECT ${BASE_RIDE_FIELDS}
+          SELECT ${BASE_RIDE_FIELDS}, pickup_point
           FROM rides
         ) r ON r.id = i.ride_id
         JOIN users cu ON cu.id = r.client_id
         WHERE ${conditions.join(" AND ")}
-        ORDER BY i.invited_at DESC, i.id DESC
+        ORDER BY pickup_distance_meters ASC NULLS LAST, i.invited_at DESC, i.id DESC
         LIMIT $${limitIndex}
         OFFSET $${offsetIndex}
       `,
@@ -665,8 +667,53 @@ class RideModel {
         invited_at: row.invite_invited_at,
         responded_at: row.invite_responded_at,
       }),
+      pickupDistanceMeters:
+        row.pickup_distance_meters !== undefined && row.pickup_distance_meters !== null
+          ? Number(row.pickup_distance_meters)
+          : null,
       ride: RideModel.mapRideRow(row),
     }));
+  }
+
+  static async listPendingRidesNearDriver(
+    {
+      driverId,
+      driverLocationWkt,
+      radiusMeters = 2000,
+      limit = 10,
+    } = {},
+    dbClient
+  ) {
+    if (!driverId || !driverLocationWkt) {
+      return [];
+    }
+
+    const executor = getExecutor(dbClient);
+    const { rows } = await executor.query(
+      `
+        SELECT
+          ${BASE_RIDE_FIELDS},
+          ST_Distance(
+            pickup_point,
+            ST_GeogFromText($2)
+          ) AS distance_meters
+        FROM rides r
+        WHERE r.status = 'pending_driver'
+          AND r.pickup_point IS NOT NULL
+          AND ST_DWithin(r.pickup_point, ST_GeogFromText($2), $3)
+          AND NOT EXISTS (
+            SELECT 1
+            FROM ride_driver_invites i
+            WHERE i.ride_id = r.id
+              AND i.driver_id = $1
+          )
+        ORDER BY distance_meters ASC, r.requested_at ASC
+        LIMIT $4
+      `,
+      [driverId, driverLocationWkt, radiusMeters, limit]
+    );
+
+    return rows;
   }
 
   static async getDriverInvite(dbClient, rideId, driverId, { forUpdate = false } = {}) {

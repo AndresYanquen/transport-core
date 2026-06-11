@@ -7,6 +7,7 @@ const authRoutes = require("./modules/auth/routes/auth.routes");
 const rideRoutes = require("./modules/rides/routes/ride.routes");
 const driverRoutes = require("./modules/drivers/routes/driver.routes");
 const placesRoutes = require("./modules/places/routes/places.routes");
+const preferencesRoutes = require("./modules/preferences/routes/preferences.routes");
 const adminSimulationRoutes = require("./modules/admin-simulation/routes/admin-simulation.routes");
 const { authenticate } = require("./modules/auth/middleware/authentication.middleware");
 
@@ -52,6 +53,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/rides", authenticate, rideRoutes);
 app.use("/api/drivers", authenticate, driverRoutes);
 app.use("/api/places", authenticate, placesRoutes);
+app.use("/api/preferences", authenticate, preferencesRoutes);
 app.use("/places", authenticate, placesRoutes);
 // Public in non-production for debugging. In production, require auth + admin role.
 if (String(env.nodeEnv || "").toLowerCase() === "production") {

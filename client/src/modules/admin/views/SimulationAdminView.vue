@@ -136,7 +136,6 @@ async function fetchState() {
 
     const data = await apiRequest(`/api/admin/simulation/state?${params.toString()}`, {
       method: "GET",
-      auth: false,
     });
     state.payload = data;
     state.lastUpdatedAt = new Date().toISOString();

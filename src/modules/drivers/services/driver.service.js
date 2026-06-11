@@ -74,6 +74,20 @@ async function emitDriverLocationUpdated(driver) {
   }
 }
 
+async function matchPendingRidesForDriverBestEffort(driver) {
+  try {
+    const RideMatchingService = require("../../rides/services/ride-matching.service");
+    return await RideMatchingService.matchPendingRidesForDriver(driver);
+  } catch (error) {
+    console.error("Driver matching failed:", error);
+    return {
+      matched: 0,
+      invites: [],
+      errors: [{ message: error.message }],
+    };
+  }
+}
+
 async function ensureDriver(driverId, { forUpdate = false, dbClient } = {}) {
   const driver = await DriverModel.getDriverById(driverId, {
     forUpdate,
@@ -101,6 +115,7 @@ async function updateLocation(driverId, { currentLocationWkt, heading, speedKmh 
   }
 
   await emitDriverLocationUpdated(driver);
+  await matchPendingRidesForDriverBestEffort(driver);
 
   return driver;
 }
@@ -112,6 +127,10 @@ async function updateStatus(driverId, status) {
 
   if (!driver) {
     throw createHttpError(500, "Failed to update driver status.");
+  }
+
+  if (driver.status === "online") {
+    await matchPendingRidesForDriverBestEffort(driver);
   }
 
   return driver;
@@ -130,6 +149,7 @@ async function setDriverStatus(driverId, status, dbClient) {
   if (!driver) {
     throw createHttpError(500, "Failed to update driver status.");
   }
+
   return driver;
 }
 

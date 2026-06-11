@@ -138,7 +138,7 @@ async function getDriverById(driverId, { forUpdate = false, dbClient } = {}) {
 }
 
 async function findAvailableDriversNear(pointWkt, {
-  radiusMeters = 5000,
+  radiusMeters = 2000,
   limit = 5,
   excludeDriverIds = [],
   dbClient,
