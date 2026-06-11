@@ -1,8 +1,9 @@
 const RideModel = require("../models/ride.model");
 const { RideActorType } = require("../constants/ride-status");
-const { env } = require("../../../config");
+const SettingsService = require("../../settings/services/settings.service");
 
 const DEFAULT_MATCH_LIMIT = 10;
+const DRIVER_REQUEST_SEARCH_RADIUS_SETTING = "driver_request_search_radius_meters";
 
 function locationToWkt(location) {
   if (!location) {
@@ -31,8 +32,20 @@ function shouldIgnoreAssignmentError(error) {
   return [404, 409].includes(status);
 }
 
+async function getDriverRequestSearchRadiusMeters() {
+  const setting = await SettingsService.getSetting(DRIVER_REQUEST_SEARCH_RADIUS_SETTING);
+  const radiusMeters = Number(setting?.value);
+
+  if (!Number.isFinite(radiusMeters) || radiusMeters <= 0) {
+    const error = new Error("Missing or invalid driver request search radius configuration.");
+    error.status = 500;
+    throw error;
+  }
+
+  return radiusMeters;
+}
+
 async function matchPendingRidesForDriver(driver, {
-  radiusMeters = env.matching.driverRequestSearchRadiusMeters,
   limit = DEFAULT_MATCH_LIMIT,
   actorId = null,
 } = {}) {
@@ -55,6 +68,7 @@ async function matchPendingRidesForDriver(driver, {
     };
   }
 
+  const radiusMeters = await getDriverRequestSearchRadiusMeters();
   const candidateRows = await RideModel.listPendingRidesNearDriver({
     driverId: driver.userId,
     driverLocationWkt,
@@ -98,6 +112,8 @@ async function matchPendingRidesForDriver(driver, {
 module.exports = {
   matchPendingRidesForDriver,
   __private: {
+    DRIVER_REQUEST_SEARCH_RADIUS_SETTING,
+    getDriverRequestSearchRadiusMeters,
     locationToWkt,
     shouldIgnoreAssignmentError,
   },

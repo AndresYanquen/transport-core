@@ -38,11 +38,6 @@ function parseBoolean(value, fallback = false) {
   return ["1", "true", "yes", "on"].includes(normalized);
 }
 
-function parsePositiveNumber(value, fallback) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
 function withTemporaryLocalhostCors(baseOrigins, nodeEnv, allowLocalhostTemporarily) {
   if (nodeEnv !== "production" || !allowLocalhostTemporarily) {
     return baseOrigins;
@@ -102,16 +97,6 @@ const env = {
   },
   google: {
     mapsApiKey: process.env.GOOGLE_MAPS_API_KEY || "",
-  },
-  matching: {
-    clientDriverSearchRadiusMeters: parsePositiveNumber(
-      process.env.CLIENT_DRIVER_SEARCH_RADIUS_METERS,
-      2000
-    ),
-    driverRequestSearchRadiusMeters: parsePositiveNumber(
-      process.env.DRIVER_REQUEST_SEARCH_RADIUS_METERS,
-      2000
-    ),
   },
 };
 

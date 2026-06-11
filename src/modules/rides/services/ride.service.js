@@ -17,9 +17,10 @@ const {
 const { applyTransitionSideEffects } = require("./ride-effects.service");
 const { emitToRide, emitToUser } = require("../../../realtime/socket.server");
 const RideRatingService = require("./ride-rating.service");
-const { env } = require("../../../config");
+const SettingsService = require("../../settings/services/settings.service");
 
 const pool = RideModel.getPool();
+const CLIENT_DRIVER_SEARCH_RADIUS_SETTING = "client_driver_search_radius_meters";
 
 function safeRealtimeEmit(executor) {
   try {
@@ -104,6 +105,20 @@ function emitDriverInvitesCreated({
       })
     );
   }
+}
+
+async function getClientDriverSearchRadiusMeters() {
+  const setting = await SettingsService.getSetting(CLIENT_DRIVER_SEARCH_RADIUS_SETTING);
+  const radiusMeters = Number(setting?.value);
+
+  if (!Number.isFinite(radiusMeters) || radiusMeters <= 0) {
+    throw createHttpError(
+      500,
+      "Missing or invalid client driver search radius configuration."
+    );
+  }
+
+  return radiusMeters;
 }
 
 function emitDriverInviteResponded({
@@ -586,7 +601,6 @@ async function createRide({
   actorId,
   metadata,
   autoAssign = true,
-  autoAssignRadiusMeters = env.matching.clientDriverSearchRadiusMeters,
   autoAssignLimit = 5,
 }) {
   if (!clientId) {
@@ -687,7 +701,6 @@ async function createRide({
     try {
       const assignment = await assignDriver({
         rideId: rideRow.id,
-        radiusMeters: autoAssignRadiusMeters,
         limit: autoAssignLimit,
         actorType: RideActorType.SYSTEM,
         actorId,
@@ -719,7 +732,6 @@ async function createRide({
 async function assignDriver({
   rideId,
   driverId,
-  radiusMeters = env.matching.clientDriverSearchRadiusMeters,
   limit = 5,
   actorType,
   actorId,
@@ -803,6 +815,7 @@ async function assignDriver({
         throw createHttpError(400, "Ride does not have a valid pickup location.");
       }
 
+      const radiusMeters = await getClientDriverSearchRadiusMeters();
       const candidates = await DriverService.findAvailableDriversNear(pickupPointWkt, {
         radiusMeters,
         limit,
@@ -1463,7 +1476,9 @@ module.exports = {
   getRideById,
   listDriverInvites,
   __private: {
+    CLIENT_DRIVER_SEARCH_RADIUS_SETTING,
     buildTransitionPlan,
+    getClientDriverSearchRadiusMeters,
     isActiveRideUniqueViolation,
     transitionRide,
     validateTransitionPayload,

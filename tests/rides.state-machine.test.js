@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const RideService = require("../src/modules/rides/services/ride.service");
+const SettingsService = require("../src/modules/settings/services/settings.service");
 const {
   RideStatus,
   RideActorType,
@@ -12,6 +13,7 @@ const {
 
 const {
   buildTransitionPlan,
+  getClientDriverSearchRadiusMeters,
   isActiveRideUniqueViolation,
   validateTransitionPayload,
 } = RideService.__private;
@@ -157,4 +159,40 @@ test("same-status transitions are audit no-ops", async () => {
     calls.some((sql) => String(sql).includes("INSERT INTO ride_events")),
     false
   );
+});
+
+test("client driver search radius uses database setting as source of truth", async () => {
+  const originalGetSetting = SettingsService.getSetting;
+  const calls = [];
+
+  SettingsService.getSetting = async (key) => {
+    calls.push(key);
+    return { value: "2000" };
+  };
+
+  try {
+    const radiusMeters = await getClientDriverSearchRadiusMeters();
+
+    assert.equal(radiusMeters, 2000);
+    assert.deepEqual(calls, [RideService.__private.CLIENT_DRIVER_SEARCH_RADIUS_SETTING]);
+  } finally {
+    SettingsService.getSetting = originalGetSetting;
+  }
+});
+
+test("client driver search radius rejects invalid database setting", async () => {
+  const originalGetSetting = SettingsService.getSetting;
+
+  SettingsService.getSetting = async () => ({ value: "0" });
+
+  try {
+    await assert.rejects(
+      () => getClientDriverSearchRadiusMeters(),
+      (error) =>
+        error.status === 500 &&
+        /client driver search radius/.test(error.message)
+    );
+  } finally {
+    SettingsService.getSetting = originalGetSetting;
+  }
 });
