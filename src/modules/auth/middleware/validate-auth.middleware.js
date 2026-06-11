@@ -1,4 +1,4 @@
-const allowedAccountTypes = ["client", "driver", "admin"];
+const allowedAccountTypes = ["client", "driver"];
 
 function validateEmailAndPassword(req, res) {
   const { email, password } = req.body || {};

@@ -28,12 +28,8 @@ function ensureClientOwnsRideRequest(req, res, next) {
     req.body.actorType = "client";
     req.body.actorId = req.user.id;
   } else if (role === "admin") {
-    if (!req.body.actorType) {
-      req.body.actorType = "system";
-    }
-    if (!req.body.actorId) {
-      req.body.actorId = req.user.id;
-    }
+    req.body.actorType = "system";
+    req.body.actorId = req.user.id;
   }
 
   next();
@@ -56,12 +52,8 @@ function enforceDriverIdentity(req, res, next) {
     req.body.actorType = "driver";
     req.body.actorId = req.user.id;
   } else if (role === "admin") {
-    if (!req.body.actorType) {
-      req.body.actorType = "system";
-    }
-    if (!req.body.actorId) {
-      req.body.actorId = req.user.id;
-    }
+    req.body.actorType = "system";
+    req.body.actorId = req.user.id;
   }
 
   next();
@@ -80,7 +72,7 @@ function applyActorMetadata(req, _res, next) {
   } else if (role === "client") {
     req.body.actorType = "client";
     req.body.actorId = req.user.id;
-  } else if (role === "admin" && !req.body.actorType) {
+  } else if (role === "admin") {
     req.body.actorType = "system";
     req.body.actorId = req.user.id;
   }

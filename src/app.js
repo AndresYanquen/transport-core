@@ -3,6 +3,7 @@ const cors = require("cors");
 
 const { pool } = require("./config/database");
 const { env } = require("./config");
+const { corsOptions } = require("./config/cors");
 const authRoutes = require("./modules/auth/routes/auth.routes");
 const rideRoutes = require("./modules/rides/routes/ride.routes");
 const driverRoutes = require("./modules/drivers/routes/driver.routes");
@@ -13,39 +14,6 @@ const { authenticate } = require("./modules/auth/middleware/authentication.middl
 
 const app = express();
 
-const allowedOrigins = env.cors.allowedOrigins || [];
-const allowAllOrigins = allowedOrigins.includes("*");
-const allowLocalhostTemporarily = Boolean(env.cors.allowLocalhostTemporarily);
-
-function isLocalhostOrigin(origin) {
-  if (!origin) {
-    return false;
-  }
-
-  try {
-    const parsed = new URL(origin);
-    return parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
-  } catch (_error) {
-    return false;
-  }
-}
-
-const corsOptions = {
-  origin: (origin, callback) => {
-    if (
-      !origin ||
-      allowAllOrigins ||
-      allowedOrigins.includes(origin) ||
-      (allowLocalhostTemporarily && isLocalhostOrigin(origin))
-    ) {
-      return callback(null, true);
-    }
-    return callback(null, false);
-  },
-  credentials: true,
-  optionsSuccessStatus: 204,
-};
-
 app.use(cors(corsOptions));
 app.use(express.json());
 
@@ -54,7 +22,7 @@ app.use("/api/rides", authenticate, rideRoutes);
 app.use("/api/drivers", authenticate, driverRoutes);
 app.use("/api/places", authenticate, placesRoutes);
 app.use("/api/preferences", authenticate, preferencesRoutes);
-app.use("/places", authenticate, placesRoutes);
+//app.use("/places", authenticate, placesRoutes); -- no calls
 // Public in non-production for debugging. In production, require auth + admin role.
 if (String(env.nodeEnv || "").toLowerCase() === "production") {
   app.use("/api/admin/simulation", authenticate, adminSimulationRoutes);

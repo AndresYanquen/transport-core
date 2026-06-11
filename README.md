@@ -44,12 +44,83 @@ migrations/          # Raw SQL/Knex schema migrations (e.g., users table)
       middleware/    # Validators and auth-specific middleware
 ```
 
-## Available Endpoints
+## Endpoint Map
 
-`auth` module:
+All `/api/rides`, `/api/drivers`, `/api/places`, and `/api/preferences` routes require a JWT via `Authorization: Bearer <token>`. `/api/auth/signup`, `/api/auth/login`, and `/api/health` are public. Admin simulation is public outside production and admin-only in production.
 
-- `POST /api/auth/signup` – Hashes the password, stores the user in PostgreSQL (as a client or driver), inserts role-specific records, and returns verification tokens you can deliver via email/SMS.
-- `POST /api/auth/login` – Validates credentials against the database, updates `last_login_at`, and returns a signed JWT access token alongside profile data.
+### Core App
+
+Responsibility: Express bootstrap, shared middleware, CORS, route mounting, database health probe, 404 handling, and centralized error responses.
+
+| Method | Endpoint | Auth | Responsibility |
+| --- | --- | --- | --- |
+| `GET` | `/api/health` | Public | Checks API/database availability with `SELECT 1`. |
+
+### Auth Module
+
+Responsibility: account registration, login, JWT issuance, password hashing, and current-user profile lookup.
+
+| Method | Endpoint | Auth | Responsibility |
+| --- | --- | --- | --- |
+| `POST` | `/api/auth/signup` | Public | Creates a client or driver account and related profile row. |
+| `POST` | `/api/auth/login` | Public | Validates credentials, updates login metadata, and returns a JWT. |
+| `GET` | `/api/auth/me` | Authenticated | Returns the authenticated user's public profile. |
+
+### Rides Module
+
+Responsibility: ride lifecycle, assignment, driver invitations, state transitions, cancellation, no-show, requeue, ratings, ride visibility, and ride realtime emissions.
+
+| Method | Endpoint | Roles | Responsibility |
+| --- | --- | --- | --- |
+| `POST` | `/api/rides` | `client`, `admin` | Creates a ride request and initial ride event; clients can only create for themselves. |
+| `GET` | `/api/rides` | `client`, `driver`, `admin` | Lists rides visible to the caller. |
+| `GET` | `/api/rides/driver-invites` | `driver`, `admin` | Lists driver invite records, usually pending invites for a driver. |
+| `GET` | `/api/rides/:rideId` | `client`, `driver`, `admin` | Fetches ride details and event history if the caller can view the ride. |
+| `PATCH` | `/api/rides/:rideId/assign` | `admin` | Assigns a selected driver or invites nearby available drivers. |
+| `PATCH` | `/api/rides/:rideId/driver-response` | `driver` | Lets an invited driver accept or reject a pending ride invite. |
+| `PATCH` | `/api/rides/:rideId/driver-progress` | `driver`, `admin` | Advances driver-owned ride progress states such as en route, arrived, in progress, completed, or driver cancel. |
+| `PATCH` | `/api/rides/:rideId/status` | `client`, `driver`, `admin` | Generic state transition endpoint with actor validation. |
+| `PATCH` | `/api/rides/:rideId/cancel` | `client`, `driver`, `admin` | Cancels a ride according to caller role and allowed state transitions. |
+| `PATCH` | `/api/rides/:rideId/no-show` | `driver`, `admin` | Marks a ride as no-show when the driver has arrived. |
+| `PATCH` | `/api/rides/:rideId/requeue` | `admin` | Moves an assigned ride back to pending driver matching. |
+| `PATCH` | `/api/rides/:rideId/system-cancel` | `admin` | Forces a system cancellation. |
+| `POST` | `/api/rides/:rideId/rate` | `client`, `driver` | Creates a post-completion rating for the opposite party. |
+
+### Drivers Module
+
+Responsibility: driver availability, live driver position updates, and driver-side realtime location emissions.
+
+| Method | Endpoint | Roles | Responsibility |
+| --- | --- | --- | --- |
+| `PATCH` | `/api/drivers/:driverId/location` | `driver`, `admin` | Updates current location, heading, and speed; drivers can only update themselves. |
+| `PATCH` | `/api/drivers/:driverId/status` | `driver`, `admin` | Updates driver availability status; drivers can only update themselves. |
+
+### Places Module
+
+Responsibility: authenticated places lookup facade over the configured external maps provider, normalizing autocomplete, details, and reverse geocode responses without exposing provider secrets.
+
+| Method | Endpoint | Roles | Responsibility |
+| --- | --- | --- | --- |
+| `GET` | `/api/places/autocomplete` | `client`, `driver`, `admin` | Returns normalized place suggestions. |
+| `GET` | `/api/places/details` | `client`, `driver`, `admin` | Returns normalized details for a selected place. |
+| `GET` | `/api/places/reverse-geocode` | `client`, `driver`, `admin` | Resolves coordinates into a normalized place/address result. |
+
+### Preferences Module
+
+Responsibility: authenticated user preferences retrieval and partial updates.
+
+| Method | Endpoint | Auth | Responsibility |
+| --- | --- | --- | --- |
+| `GET` | `/api/preferences` | Authenticated | Returns preferences for the authenticated user. |
+| `PATCH` | `/api/preferences` | Authenticated | Validates and updates supported preference keys. |
+
+### Admin Simulation Module
+
+Responsibility: exposes simulator/runtime state for operational debugging. In production it requires admin authentication; outside production it is mounted without auth for local simulator workflows.
+
+| Method | Endpoint | Auth | Responsibility |
+| --- | --- | --- | --- |
+| `GET` | `/api/admin/simulation/state` | Public outside production; `admin` in production | Returns the current admin simulation state. |
 
 ### Authentication
 
@@ -64,25 +135,6 @@ Configure the signing key via `JWT_SECRET` in your `.env` (defaults to `dev-inse
 ### CORS
 
 Use the `CORS_ALLOWED_ORIGINS` environment variable to control which origins may call the API from the browser. The default configuration allows common local development origins (`http://localhost:3000`, `http://localhost:3001`, `http://localhost:5173`, and 127.0.0.1 equivalents). Add or override origins as a comma-separated list when needed.
-
-`rides` module (basic MVP):
-
-- `POST /api/rides` – Client creates a ride request with pickup/dropoff coordinates; stores PostGIS points and records the initial ride event.
-- `GET /api/rides` – Lists rides visible to the authenticated actor. Clients only see their own rides; drivers only see rides assigned to them.
-- `PATCH /api/rides/:rideId/assign` – Moves a ride into the matching queue if needed and sends invites to a selected or nearby online driver.
-- `PATCH /api/rides/:rideId/driver-response` – Driver accepts or rejects the invitation.
-- `PATCH /api/rides/:rideId/driver-progress` – Driver advances ride status (`driver_en_route`, `driver_arrived`, `in_progress`, `completed`, `canceled_by_driver`).
-- `POST /api/rides/:rideId/rate` – Client rates driver (or driver rates client) after the ride is completed.
-- `PATCH /api/rides/:rideId/cancel` – Cancels the ride as `canceled_by_client`, `canceled_by_driver`, or `canceled_by_system` depending on the caller role.
-- `PATCH /api/rides/:rideId/no-show` – Marks a ride as `no_show` from `driver_arrived`.
-- `PATCH /api/rides/:rideId/requeue` – Admin/system command to move a `driver_assigned` ride back to `pending_driver`.
-- `PATCH /api/rides/:rideId/system-cancel` – Admin/system command to force `canceled_by_system`.
-- `GET /api/rides/:rideId` – Fetch ride details plus event history.
-
-`drivers` module:
-
-- `PATCH /api/drivers/:driverId/location` – Updates the driver's PostGIS location, heading, and speed.
-- `PATCH /api/drivers/:driverId/status` – Changes driver availability (`offline`, `online`, `busy`, `unavailable`).
 
 ### Sample Requests
 

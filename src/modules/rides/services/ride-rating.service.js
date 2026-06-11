@@ -28,10 +28,9 @@ function normalizeTags(tags) {
 async function updateAggregateForRatee(dbClient, { rateeUserId, rateeRole }) {
   const table = rateeRole === "driver" ? "drivers" : "clients";
 
-  // Use the existing `total_trips` as rating count for incremental average updates.
   const { rows } = await dbClient.query(
     `
-      SELECT rating, total_trips
+      SELECT user_id
       FROM ${table}
       WHERE user_id = $1
       FOR UPDATE
@@ -44,9 +43,6 @@ async function updateAggregateForRatee(dbClient, { rateeUserId, rateeRole }) {
     return;
   }
 
-  const currentRating = Number(rows[0].rating ?? 0);
-  const currentCount = Number(rows[0].total_trips ?? 0);
-
   const { rows: avgRows } = await dbClient.query(
     `
       SELECT AVG(stars)::double precision AS avg_stars
@@ -57,18 +53,16 @@ async function updateAggregateForRatee(dbClient, { rateeUserId, rateeRole }) {
   );
 
   const avg = avgRows[0]?.avg_stars;
-  const nextRating = avg !== null && avg !== undefined ? Number(avg) : currentRating;
-  const nextCount = currentCount + 1;
+  const nextRating = avg !== null && avg !== undefined ? Number(avg) : 0;
 
   await dbClient.query(
     `
       UPDATE ${table}
       SET rating = $2,
-          total_trips = $3,
           updated_at = NOW()
       WHERE user_id = $1
     `,
-    [rateeUserId, nextRating, nextCount]
+    [rateeUserId, nextRating]
   );
 }
 
@@ -121,6 +115,7 @@ async function rateRide({ rideId, stars, comment, tags }, viewer) {
   const normalizedTags = normalizeTags(tags);
 
   const dbClient = await pool.connect();
+  let committed = false;
   try {
     await dbClient.query("BEGIN");
 
@@ -154,12 +149,15 @@ async function rateRide({ rideId, stars, comment, tags }, viewer) {
     await updateAggregateForRatee(dbClient, { rateeUserId, rateeRole });
 
     await dbClient.query("COMMIT");
+    committed = true;
 
     return {
       rating,
     };
   } catch (error) {
-    await dbClient.query("ROLLBACK");
+    if (!committed) {
+      await dbClient.query("ROLLBACK");
+    }
     throw error;
   } finally {
     dbClient.release();
@@ -190,5 +188,6 @@ module.exports = {
   __private: {
     normalizeTags,
     determineRatee,
+    updateAggregateForRatee,
   },
 };

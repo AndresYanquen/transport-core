@@ -8,6 +8,14 @@ const pool = new Pool({
   database: env.db.database,
   user: env.db.user,
   password: env.db.password,
+  ssl: env.db.ssl
+    ? {
+        rejectUnauthorized: env.db.rejectUnauthorized,
+      }
+    : false,
+  connectionTimeoutMillis: env.db.connectionTimeoutMillis,
+  idleTimeoutMillis: env.db.idleTimeoutMillis,
+  max: env.db.poolMax,
 });
 
 pool.on("error", (err) => {

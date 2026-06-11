@@ -38,6 +38,15 @@ function parseBoolean(value, fallback = false) {
   return ["1", "true", "yes", "on"].includes(normalized);
 }
 
+function parseNumber(value, fallback) {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function withTemporaryLocalhostCors(baseOrigins, nodeEnv, allowLocalhostTemporarily) {
   if (nodeEnv !== "production" || !allowLocalhostTemporarily) {
     return baseOrigins;
@@ -68,13 +77,18 @@ const parsedCorsOrigins = parseCsv(
 
 const env = {
   nodeEnv,
-  port: Number(process.env.PORT || 3000),
+  port: parseNumber(process.env.PORT, 3000),
   db: {
     host: process.env.DB_HOST || "localhost",
-    port: Number(process.env.DB_PORT || 5432),
+    port: parseNumber(process.env.DB_PORT, 5432),
     database: process.env.DB_NAME || "postgres",
     user: process.env.DB_USER || "postgres",
     password: process.env.DB_PASSWORD || "",
+    ssl: parseBoolean(process.env.DB_SSL, false),
+    rejectUnauthorized: parseBoolean(process.env.DB_SSL_REJECT_UNAUTHORIZED, false),
+    connectionTimeoutMillis: parseNumber(process.env.DB_CONNECTION_TIMEOUT_MS, 5000),
+    idleTimeoutMillis: parseNumber(process.env.DB_IDLE_TIMEOUT_MS, 30000),
+    poolMax: parseNumber(process.env.DB_POOL_MAX, 10),
   },
   cors: {
     allowedOrigins: withTemporaryLocalhostCors(
@@ -86,9 +100,10 @@ const env = {
   },
   security: {
     jwtSecret: process.env.JWT_SECRET || "dev-insecure-jwt-secret",
-    jwtExpiresInSeconds: Number(process.env.JWT_ACCESS_TTL_SECONDS || 3600),
-    jwtRememberMeExpiresInSeconds: Number(
-      process.env.JWT_REMEMBER_ME_TTL_SECONDS || 2592000
+    jwtExpiresInSeconds: parseNumber(process.env.JWT_ACCESS_TTL_SECONDS, 3600),
+    jwtRememberMeExpiresInSeconds: parseNumber(
+      process.env.JWT_REMEMBER_ME_TTL_SECONDS,
+      2592000
     ),
   },
   realtime: {

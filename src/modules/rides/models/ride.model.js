@@ -569,6 +569,7 @@ class RideModel {
           ON CONFLICT (ride_id, driver_id)
           DO UPDATE SET
             status = EXCLUDED.status,
+            invited_at = NOW(),
             responded_at = NULL
           RETURNING *
         `,

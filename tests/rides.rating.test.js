@@ -4,7 +4,8 @@ const assert = require("node:assert/strict");
 const { RideStatus } = require("../src/modules/rides/constants/ride-status");
 const RatingService = require("../src/modules/rides/services/ride-rating.service");
 
-const { normalizeTags, determineRatee } = RatingService.__private;
+const { normalizeTags, determineRatee, updateAggregateForRatee } =
+  RatingService.__private;
 
 function buildRideRow(overrides = {}) {
   return {
@@ -57,3 +58,32 @@ test("driver rates client only for assigned ride", () => {
   );
 });
 
+test("updateAggregateForRatee recalculates rating without changing total trips", async () => {
+  const calls = [];
+  const dbClient = {
+    async query(sql, params) {
+      calls.push({ sql: String(sql), params });
+
+      if (String(sql).includes("SELECT user_id")) {
+        return { rows: [{ user_id: "driver-1" }] };
+      }
+
+      if (String(sql).includes("AVG(stars)")) {
+        return { rows: [{ avg_stars: 4.5 }] };
+      }
+
+      return { rows: [] };
+    },
+  };
+
+  await updateAggregateForRatee(dbClient, {
+    rateeUserId: "driver-1",
+    rateeRole: "driver",
+  });
+
+  const updateCall = calls.find((call) => call.sql.includes("UPDATE drivers"));
+
+  assert.ok(updateCall);
+  assert.equal(updateCall.sql.includes("total_trips"), false);
+  assert.deepEqual(updateCall.params, ["driver-1", 4.5]);
+});

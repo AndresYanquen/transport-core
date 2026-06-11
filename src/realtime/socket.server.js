@@ -1,6 +1,7 @@
 const { Server } = require("socket.io");
 
 const { env } = require("../config");
+const { isAllowedCorsOrigin } = require("../config/cors");
 const AuthModel = require("../modules/auth/models/auth.model");
 const { verifyJwt } = require("../modules/auth/utils/jwt");
 const { query } = require("../config/database");
@@ -8,32 +9,6 @@ const { query } = require("../config/database");
 let ioInstance = null;
 const uuidV4LikeRegex =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
-
-function isLocalhostOrigin(origin) {
-  if (!origin) {
-    return false;
-  }
-
-  try {
-    const parsed = new URL(origin);
-    return parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
-  } catch (_error) {
-    return false;
-  }
-}
-
-function isAllowedOrigin(origin) {
-  const allowedOrigins = env.cors.allowedOrigins || [];
-  const allowAllOrigins = allowedOrigins.includes("*");
-  const allowLocalhostTemporarily = Boolean(env.cors.allowLocalhostTemporarily);
-
-  return (
-    !origin ||
-    allowAllOrigins ||
-    allowedOrigins.includes(origin) ||
-    (allowLocalhostTemporarily && isLocalhostOrigin(origin))
-  );
-}
 
 function extractBearerToken(headerValue = "") {
   const matches = headerValue.match(/^Bearer\s+(.+)$/i);
@@ -205,7 +180,7 @@ function initializeSocketServer(httpServer) {
   const io = new Server(httpServer, {
     path: env.realtime.path,
     cors: {
-      origin: (origin, callback) => callback(null, isAllowedOrigin(origin)),
+      origin: (origin, callback) => callback(null, isAllowedCorsOrigin(origin)),
       credentials: true,
     },
   });
@@ -237,11 +212,20 @@ function emitToUser(userId, eventName, payload) {
   ioInstance.to(userRoom(userId)).emit(eventName, payload);
 }
 
+function removeUserFromRideRoom(userId, rideId) {
+  if (!ioInstance || !userId || !rideId) {
+    return;
+  }
+
+  ioInstance.in(userRoom(userId)).socketsLeave(rideRoom(rideId));
+}
+
 module.exports = {
   initializeSocketServer,
   getSocketServer,
   emitToRide,
   emitToUser,
+  removeUserFromRideRoom,
   userRoom,
   roleRoom,
   rideRoom,

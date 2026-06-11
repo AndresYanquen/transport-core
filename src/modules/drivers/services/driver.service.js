@@ -38,7 +38,6 @@ async function emitDriverLocationUpdated(driver) {
       emittedAt,
     };
 
-    safeRealtimeEmit(() => emitToRide(rideRow.id, "ride:driver-location-updated", payload));
     if (rideRow.client_id) {
       safeRealtimeEmit(() =>
         emitToUser(rideRow.client_id, "ride:driver-location-updated", payload)
@@ -51,23 +50,9 @@ async function emitDriverLocationUpdated(driver) {
     }
 
     safeRealtimeEmit(() =>
-      emitToRide(rideRow.id, "ride:status-updated", {
+      emitToRide(rideRow.id, "ride:driver-location-updated", {
         rideId: rideRow.id,
-        previousStatus: rideRow.status,
-        ride: {
-          id: rideRow.id,
-          driverId: driver.userId,
-          status: rideRow.status,
-          driverLocation: driver.currentLocation ?? { lat: null, lng: null },
-          driver: {
-            currentLocation: driver.currentLocation ?? { lat: null, lng: null },
-            headingDegrees: driver.headingDegrees ?? null,
-            speedKmh: driver.speedKmh ?? null,
-          },
-        },
-        event: {
-          type: "driver_location_updated",
-        },
+        driverId: driver.userId,
         emittedAt,
       })
     );

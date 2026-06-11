@@ -8,7 +8,7 @@ const { signJwt } = require("../utils/jwt");
 const PASSWORD_SALT_ROUNDS = 12;
 const VERIFICATION_TOKEN_BYTES = 32;
 
-const allowedAccountTypes = ["client", "driver", "admin"];
+const allowedAccountTypes = ["client", "driver"];
 
 function toWktPoint(location) {
   if (!location) return null;
@@ -76,9 +76,15 @@ async function registerUser({
   clientProfile = {},
   driverProfile = {},
 }) {
-  const normalizedAccountType = allowedAccountTypes.includes(accountType)
-    ? accountType
-    : "client";
+  if (!allowedAccountTypes.includes(accountType)) {
+    const error = new Error(
+      `accountType must be one of: ${allowedAccountTypes.join(", ")}.`
+    );
+    error.status = 400;
+    throw error;
+  }
+
+  const normalizedAccountType = accountType;
 
   if (
     normalizedAccountType === "driver" &&

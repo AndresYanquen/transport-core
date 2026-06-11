@@ -15,7 +15,11 @@ const {
   RIDE_INVITE_STATUS_VALUES,
 } = require("../constants/ride-invite-status");
 const { applyTransitionSideEffects } = require("./ride-effects.service");
-const { emitToRide, emitToUser } = require("../../../realtime/socket.server");
+const {
+  emitToRide,
+  emitToUser,
+  removeUserFromRideRoom,
+} = require("../../../realtime/socket.server");
 const RideRatingService = require("./ride-rating.service");
 const SettingsService = require("../../settings/services/settings.service");
 
@@ -28,6 +32,54 @@ function safeRealtimeEmit(executor) {
   } catch (error) {
     console.error("Realtime emit failed:", error);
   }
+}
+
+function removeUsersFromRideRoom({ rideId, userIds = [] }) {
+  userIds.forEach((userId) => {
+    safeRealtimeEmit(() => removeUserFromRideRoom(userId, rideId));
+  });
+}
+
+function summarizeRealtimeEvent(event) {
+  if (!event) {
+    return null;
+  }
+
+  return {
+    id: event.id ?? null,
+    status: event.status ?? null,
+    actorType: event.actorType ?? event.actor_type ?? null,
+    occurredAt: event.occurredAt ?? event.occurred_at ?? null,
+  };
+}
+
+function buildRideRoomStatusPayload({
+  ride,
+  event,
+  previousStatus,
+  pendingInvites,
+  emittedAt,
+}) {
+  const payload = {
+    rideId: ride.id,
+    previousStatus,
+    ride: {
+      id: ride.id,
+      status: ride.status,
+      driverId: ride.driverId ?? null,
+      updatedAt: ride.updatedAt ?? null,
+    },
+    event: summarizeRealtimeEvent(event),
+    emittedAt,
+  };
+
+  if (pendingInvites !== undefined) {
+    payload.pendingInvitesCount = Array.isArray(pendingInvites)
+      ? pendingInvites.length
+      : 0;
+  }
+
+  return payload;
 }
 
 async function emitRideStatusUpdated({
@@ -65,7 +117,19 @@ async function emitRideStatusUpdated({
     payload.pendingInvites = pendingInvites;
   }
 
-  safeRealtimeEmit(() => emitToRide(payloadRide.id, "ride:status-updated", payload));
+  safeRealtimeEmit(() =>
+    emitToRide(
+      payloadRide.id,
+      "ride:status-updated",
+      buildRideRoomStatusPayload({
+        ride: payloadRide,
+        event,
+        previousStatus,
+        pendingInvites,
+        emittedAt: payload.emittedAt,
+      })
+    )
+  );
 
   if (payloadRide.clientId) {
     safeRealtimeEmit(() => emitToUser(payloadRide.clientId, "ride:status-updated", payload));
@@ -149,7 +213,18 @@ function emitDriverInviteResponded({
     safeRealtimeEmit(() => emitToUser(ride.clientId, "ride:invite-responded", payload));
   }
 
-  safeRealtimeEmit(() => emitToRide(ride.id, "ride:invite-responded", payload));
+  safeRealtimeEmit(() =>
+    emitToRide(ride.id, "ride:invite-responded", {
+      rideId: ride.id,
+      invite: {
+        driverId: invite.driverId,
+        status: invite.status,
+      },
+      event: summarizeRealtimeEvent(event),
+      pendingInvitesCount: Array.isArray(pendingInvites) ? pendingInvites.length : 0,
+      emittedAt: payload.emittedAt,
+    })
+  );
 }
 
 function emitDriverInvitesExpired({
@@ -195,6 +270,28 @@ function createHttpError(status, message) {
   const error = new Error(message);
   error.status = status;
   return error;
+}
+
+function canViewRide(rideRow, viewer) {
+  if (!viewer?.id || !viewer?.role || !rideRow) {
+    return false;
+  }
+
+  const role = String(viewer.role).toLowerCase();
+
+  if (role === "admin") {
+    return true;
+  }
+
+  if (role === "client") {
+    return rideRow.client_id === viewer.id;
+  }
+
+  if (role === "driver") {
+    return rideRow.driver_id === viewer.id;
+  }
+
+  return false;
 }
 
 function isActiveRideUniqueViolation(error) {
@@ -345,6 +442,7 @@ function validateTransitionPayload({
   currentRow,
   toStatus,
   actorType,
+  actorId,
   driverId,
   actualDistanceMeters,
   actualDurationSeconds,
@@ -358,6 +456,18 @@ function validateTransitionPayload({
     RideStatus.IN_PROGRESS,
     RideStatus.COMPLETED,
   ]);
+
+  if (actorType === RideActorType.CLIENT && currentRow.client_id !== actorId) {
+    throw createHttpError(403, "Clients can only act on their own rides.");
+  }
+
+  if (
+    actorType === RideActorType.DRIVER &&
+    toStatus !== RideStatus.DRIVER_ASSIGNED &&
+    currentRow.driver_id !== actorId
+  ) {
+    throw createHttpError(403, "Drivers can only act on rides assigned to them.");
+  }
 
   if (toStatus === RideStatus.DRIVER_ASSIGNED && !driverId) {
     throw createHttpError(400, "driverId is required to assign a driver.");
@@ -416,6 +526,7 @@ function validateTransitionPayload({
 function buildTransitionPlan(currentRow, {
   toStatus,
   actorType,
+  actorId,
   driverId,
   cancellationReason,
   actualDistanceMeters,
@@ -429,6 +540,7 @@ function buildTransitionPlan(currentRow, {
     currentRow,
     toStatus,
     actorType,
+    actorId,
     driverId,
     actualDistanceMeters,
     actualDurationSeconds,
@@ -537,6 +649,7 @@ async function transitionRide(dbClient, {
   const plan = buildTransitionPlan(currentRow, {
     toStatus,
     actorType,
+    actorId,
     driverId,
     cancellationReason,
     actualDistanceMeters,
@@ -576,6 +689,10 @@ async function transitionRide(dbClient, {
     ride: RideModel.mapRideRow(updatedRow),
     event: RideModel.mapEventRow(eventRow),
     previousStatus: currentRow.status,
+    revokedRideRoomUserIds:
+      toStatus === RideStatus.PENDING_DRIVER && plan.previousDriverId
+        ? [plan.previousDriverId]
+        : [],
     statusChanged: true,
     idempotent: false,
   };
@@ -639,6 +756,7 @@ async function createRide({
   }
 
   const dbClient = await pool.connect();
+  let committed = false;
   try {
     await dbClient.query("BEGIN");
 
@@ -682,6 +800,7 @@ async function createRide({
     });
 
     await dbClient.query("COMMIT");
+    committed = true;
 
     const baseResult = {
       ride: RideModel.mapRideRow(rideRow),
@@ -719,7 +838,9 @@ async function createRide({
       };
     }
   } catch (error) {
-    await dbClient.query("ROLLBACK");
+    if (!committed) {
+      await dbClient.query("ROLLBACK");
+    }
     if (isActiveRideUniqueViolation(error)) {
       throw createHttpError(409, "Client already has an active ride.");
     }
@@ -744,6 +865,7 @@ async function assignDriver({
   const normalizedActorType = normalizeActorType(actorType, RideActorType.SYSTEM);
 
   const dbClient = await pool.connect();
+  let committed = false;
   try {
     await dbClient.query("BEGIN");
 
@@ -865,6 +987,7 @@ async function assignDriver({
     }
 
     await dbClient.query("COMMIT");
+    committed = true;
     const result = {
       ride: transitionResult ? transitionResult.ride : RideModel.mapRideRow(workingRideRow),
       invites: invites.length
@@ -891,7 +1014,9 @@ async function assignDriver({
 
     return result;
   } catch (error) {
-    await dbClient.query("ROLLBACK");
+    if (!committed) {
+      await dbClient.query("ROLLBACK");
+    }
     throw error;
   } finally {
     dbClient.release();
@@ -921,6 +1046,7 @@ async function respondDriverAssignment({
   const normalizedActorType = normalizeActorType(actorType, RideActorType.DRIVER);
 
   const dbClient = await pool.connect();
+  let committed = false;
   try {
     await dbClient.query("BEGIN");
 
@@ -941,6 +1067,7 @@ async function respondDriverAssignment({
       });
 
       await dbClient.query("COMMIT");
+      committed = true;
 
       const isAssignedToThisDriver =
         rideRow.status === RideStatus.DRIVER_ASSIGNED && rideRow.driver_id === driverId;
@@ -966,6 +1093,7 @@ async function respondDriverAssignment({
         statuses: [RideInviteStatus.PENDING],
       });
       await dbClient.query("COMMIT");
+      committed = true;
       return {
         ride: RideModel.mapRideRow(rideRow),
         pendingInvites,
@@ -1028,6 +1156,7 @@ async function respondDriverAssignment({
     });
 
     await dbClient.query("COMMIT");
+    committed = true;
     const response = {
       ride: result.ride,
       pendingInvites,
@@ -1075,7 +1204,9 @@ async function respondDriverAssignment({
 
     return response;
   } catch (error) {
-    await dbClient.query("ROLLBACK");
+    if (!committed) {
+      await dbClient.query("ROLLBACK");
+    }
     throw error;
   } finally {
     dbClient.release();
@@ -1127,6 +1258,7 @@ async function driverProgress({
   const normalizedActorType = normalizeActorType(actorType, RideActorType.DRIVER);
 
   const dbClient = await pool.connect();
+  let committed = false;
   try {
     await dbClient.query("BEGIN");
 
@@ -1147,6 +1279,7 @@ async function driverProgress({
     });
 
     await dbClient.query("COMMIT");
+    committed = true;
 
     if (result.statusChanged) {
       await emitRideStatusUpdated({
@@ -1158,7 +1291,9 @@ async function driverProgress({
 
     return result;
   } catch (error) {
-    await dbClient.query("ROLLBACK");
+    if (!committed) {
+      await dbClient.query("ROLLBACK");
+    }
     throw error;
   } finally {
     dbClient.release();
@@ -1191,6 +1326,7 @@ async function updateRideStatus({
   const normalizedActorType = normalizeActorType(actorType);
 
   const dbClient = await pool.connect();
+  let committed = false;
   try {
     await dbClient.query("BEGIN");
     const pendingInvitesBeforeTerminalTransition = TERMINAL_RIDE_STATUSES.has(nextStatus)
@@ -1215,6 +1351,12 @@ async function updateRideStatus({
       pricingBreakdown,
     });
     await dbClient.query("COMMIT");
+    committed = true;
+
+    removeUsersFromRideRoom({
+      rideId,
+      userIds: result.revokedRideRoomUserIds,
+    });
 
     if (result.statusChanged) {
       await emitRideStatusUpdated({
@@ -1236,7 +1378,9 @@ async function updateRideStatus({
       ...result,
     };
   } catch (error) {
-    await dbClient.query("ROLLBACK");
+    if (!committed) {
+      await dbClient.query("ROLLBACK");
+    }
     throw error;
   } finally {
     dbClient.release();
@@ -1437,6 +1581,10 @@ async function getRideById(
     throw createHttpError(404, `Ride ${rideId} not found.`);
   }
 
+  if (!canViewRide(rideRow, viewer)) {
+    throw createHttpError(403, "Forbidden: insufficient permissions for this ride.");
+  }
+
   const ride = RideModel.mapRideRow(rideRow);
 
   const response = { ride, events: [] };
@@ -1483,5 +1631,6 @@ module.exports = {
     transitionRide,
     validateTransitionPayload,
     normalizeActorType,
+    canViewRide,
   },
 };
