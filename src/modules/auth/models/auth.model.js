@@ -23,10 +23,13 @@ const baseUserSelect = `
     u.updated_at,
     u.deleted_at,
     c.default_payment_method,
-    c.preferred_language,
     c.rating AS client_rating,
-    c.total_trips AS client_total_trips,
-    c.preferences AS client_preferences,
+    (
+      SELECT COUNT(*)::integer
+      FROM rides r
+      WHERE r.client_id = u.id
+        AND r.status = 'completed'
+    ) AS client_total_trips,
     c.created_at AS client_created_at,
     c.updated_at AS client_updated_at,
     d.license_number AS driver_license_number,
@@ -36,8 +39,14 @@ const baseUserSelect = `
     d.vehicle_color AS driver_vehicle_color,
     d.vehicle_plate AS driver_vehicle_plate,
     d.vehicle_type AS driver_vehicle_type,
+    d.service_type_code AS driver_service_type,
     d.rating AS driver_rating,
-    d.total_trips AS driver_total_trips,
+    (
+      SELECT COUNT(*)::integer
+      FROM rides r
+      WHERE r.driver_id = u.id
+        AND r.status = 'completed'
+    ) AS driver_total_trips,
     d.status AS driver_status,
     d.documents AS driver_documents,
     d.onboarded_at AS driver_onboarded_at,
@@ -103,6 +112,20 @@ class AuthModel {
 
       const resolvedRole =
         accountType === "driver" ? "driver" : accountType === "client" ? "client" : role;
+      const profile = {};
+      if (accountType === "client" && clientProfile) {
+        const preferences = {
+          ...(clientProfile.preferences ?? {}),
+        };
+
+        if (clientProfile.preferredLanguage) {
+          preferences.language = clientProfile.preferredLanguage;
+        }
+
+        if (Object.keys(preferences).length) {
+          profile.preferences = preferences;
+        }
+      }
 
       const userInsert = await client.query(
         `
@@ -118,9 +141,10 @@ class AuthModel {
             email_verification_token,
             email_verification_sent_at,
             phone_verification_token,
-            phone_verification_sent_at
+            phone_verification_sent_at,
+            profile
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)
           RETURNING id
         `,
         [
@@ -136,6 +160,7 @@ class AuthModel {
           emailVerificationSentAt ?? null,
           phoneVerificationToken ?? null,
           phoneVerificationSentAt ?? null,
+          JSON.stringify(profile),
         ]
       );
 
@@ -160,6 +185,7 @@ class AuthModel {
               vehicle_color,
               vehicle_plate,
               vehicle_type,
+              service_type_code,
               documents,
               current_location
             )
@@ -173,11 +199,12 @@ class AuthModel {
               $7,
               $8,
               $9,
+              $10,
               CASE
-                WHEN $10::double precision IS NULL OR $11::double precision IS NULL
+                WHEN $11::double precision IS NULL OR $12::double precision IS NULL
                   THEN NULL
                 ELSE ST_SetSRID(
-                  ST_MakePoint($11::double precision, $10::double precision),
+                  ST_MakePoint($12::double precision, $11::double precision),
                   4326
                 )::geography
               END
@@ -192,6 +219,7 @@ class AuthModel {
             driverProfile.vehicleColor ?? null,
             driverProfile.vehiclePlate,
             driverProfile.vehicleType ?? null,
+            driverProfile.serviceType || "standard",
             JSON.stringify(driverProfile.documents ?? {}),
             locationLat,
             locationLng,
@@ -205,23 +233,17 @@ class AuthModel {
             INSERT INTO clients (
               user_id,
               default_payment_method,
-              preferred_language,
-              preferences,
               home_location
             )
             VALUES (
               $1,
               $2,
-              $3,
-              $4,
-              CASE WHEN $5::text IS NULL THEN NULL ELSE ST_GeogFromText($5::text) END
+              CASE WHEN $3::text IS NULL THEN NULL ELSE ST_GeogFromText($3::text) END
             )
           `,
           [
             userId,
             clientProfile.defaultPaymentMethod ?? null,
-            clientProfile.preferredLanguage ?? null,
-            JSON.stringify(clientProfile.preferences ?? {}),
             clientProfile.homeLocationWkt ?? null,
           ]
         );
@@ -272,18 +294,20 @@ class AuthModel {
 
   static toPublicUser(row) {
     if (!row) return null;
+    const userProfile = row.profile ?? {};
+    const userPreferences = userProfile?.preferences ?? {};
+    const clientPreferredLanguage = userPreferences?.language ?? null;
     const clientProfile =
       row.default_payment_method !== null ||
-      row.preferred_language !== null ||
+      clientPreferredLanguage !== null ||
       row.client_rating !== null ||
       row.client_total_trips !== null ||
       row.client_home_location !== null
         ? {
             defaultPaymentMethod: row.default_payment_method,
-            preferredLanguage: row.preferred_language,
+            preferredLanguage: clientPreferredLanguage,
             rating: row.client_rating,
             totalTrips: row.client_total_trips,
-            preferences: row.client_preferences,
             homeLocation: row.client_home_location,
             createdAt: row.client_created_at,
             updatedAt: row.client_updated_at,
@@ -299,6 +323,7 @@ class AuthModel {
           vehicleColor: row.driver_vehicle_color,
           vehiclePlate: row.driver_vehicle_plate,
           vehicleType: row.driver_vehicle_type,
+          serviceType: row.driver_service_type,
           rating: row.driver_rating,
           totalTrips: row.driver_total_trips,
           status: row.driver_status,
@@ -321,7 +346,7 @@ class AuthModel {
       status: row.status,
       emailVerified: row.email_verified,
       phoneVerified: row.phone_verified,
-      profile: row.profile,
+      profile: userProfile,
       clientProfile,
       driverProfile,
       emailVerificationSentAt: row.email_verification_sent_at,

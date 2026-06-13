@@ -9,6 +9,9 @@ const rideRoutes = require("./modules/rides/routes/ride.routes");
 const driverRoutes = require("./modules/drivers/routes/driver.routes");
 const placesRoutes = require("./modules/places/routes/places.routes");
 const preferencesRoutes = require("./modules/preferences/routes/preferences.routes");
+const savedDestinationRoutes = require("./modules/saved-destinations/routes/saved-destination.routes");
+const preferredDriverRoutes = require("./modules/preferred-drivers/routes/preferred-driver.routes");
+const serviceTypeRoutes = require("./modules/service-types/routes/service-type.routes");
 const adminSimulationRoutes = require("./modules/admin-simulation/routes/admin-simulation.routes");
 const { authenticate } = require("./modules/auth/middleware/authentication.middleware");
 
@@ -22,6 +25,9 @@ app.use("/api/rides", authenticate, rideRoutes);
 app.use("/api/drivers", authenticate, driverRoutes);
 app.use("/api/places", authenticate, placesRoutes);
 app.use("/api/preferences", authenticate, preferencesRoutes);
+app.use("/api/saved-destinations", authenticate, savedDestinationRoutes);
+app.use("/api/preferred-drivers", authenticate, preferredDriverRoutes);
+app.use("/api/service-types", authenticate, serviceTypeRoutes);
 //app.use("/places", authenticate, placesRoutes); -- no calls
 // Public in non-production for debugging. In production, require auth + admin role.
 if (String(env.nodeEnv || "").toLowerCase() === "production") {

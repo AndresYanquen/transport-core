@@ -46,6 +46,7 @@ exports.seed = async function seed(knex) {
             email_verification_sent_at: null,
             phone_verification_token: null,
             phone_verification_sent_at: null,
+            profile: JSON.stringify({ preferences: { language: "en" } }),
             created_at: trx.fn.now(),
             updated_at: trx.fn.now(),
           })
@@ -64,9 +65,9 @@ exports.seed = async function seed(knex) {
           vehicle_color: "Gray",
           vehicle_plate: `SIM-${String(n).padStart(4, "0")}`,
           vehicle_type: "Sedan",
+          service_type_code: "standard",
           documents: JSON.stringify({ sim: true }),
           rating: 0,
-          total_trips: 0,
           status: "offline",
           current_location: null,
           onboarded_at: trx.fn.now(),
@@ -111,10 +112,7 @@ exports.seed = async function seed(knex) {
         await trx("clients").insert({
           user_id: userId,
           default_payment_method: null,
-          preferred_language: "en",
           rating: 0,
-          total_trips: 0,
-          preferences: JSON.stringify({ sim: true }),
           home_location: null,
           created_at: trx.fn.now(),
           updated_at: trx.fn.now(),
@@ -123,4 +121,3 @@ exports.seed = async function seed(knex) {
     }
   });
 };
-

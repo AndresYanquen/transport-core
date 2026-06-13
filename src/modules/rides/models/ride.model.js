@@ -258,6 +258,7 @@ class RideModel {
           d.vehicle_color AS driver_vehicle_color,
           d.vehicle_plate AS driver_vehicle_plate,
           d.vehicle_type AS driver_vehicle_type,
+          d.service_type_code AS driver_service_type,
           d.status AS driver_status,
           ST_AsGeoJSON(d.current_location)::jsonb AS driver_current_location_geojson,
           d.heading_degrees AS driver_heading_degrees,
@@ -460,6 +461,7 @@ class RideModel {
               vehicleColor: row.driver_vehicle_color ?? null,
               vehiclePlate: row.driver_vehicle_plate ?? null,
               vehicleType: row.driver_vehicle_type ?? null,
+              serviceType: row.driver_service_type ?? null,
               status: row.driver_status ?? null,
               currentLocation: (() => {
                 const geo = parseJson(row.driver_current_location_geojson);

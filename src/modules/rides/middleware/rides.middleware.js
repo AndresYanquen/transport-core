@@ -1,6 +1,7 @@
-const allowedServiceTypes = ["standard", "premium", "pool"];
-
 const { RideStatus } = require("../constants/ride-status");
+const ServiceTypeService = require("../../service-types/services/service-type.service");
+
+const DEFAULT_SERVICE_TYPE = "standard";
 
 function toWktPoint(location) {
   if (!location) return null;
@@ -30,7 +31,7 @@ function toWktPoint(location) {
   return `SRID=4326;POINT(${longitudeValue} ${latitudeValue})`;
 }
 
-function validateCreateRide(req, res, next) {
+async function validateCreateRide(req, res, next) {
   const {
     clientId,
     pickupAddress,
@@ -38,7 +39,7 @@ function validateCreateRide(req, res, next) {
     pickupLocation,
     dropoffLocation,
     hasDestination,
-    serviceType = "standard",
+    serviceType = DEFAULT_SERVICE_TYPE,
     estimatedDistanceMeters,
     estimatedDurationSeconds,
     estimatedFareAmount,
@@ -90,9 +91,22 @@ function validateCreateRide(req, res, next) {
     });
   }
 
-  if (!allowedServiceTypes.includes(serviceType)) {
+  if (typeof serviceType !== "string" || !serviceType.trim()) {
     return res.status(400).json({
-      message: `serviceType must be one of: ${allowedServiceTypes.join(", ")}`,
+      message: "serviceType must be a non-empty string.",
+    });
+  }
+
+  let activeServiceTypes;
+  try {
+    activeServiceTypes = await ServiceTypeService.listActiveServiceTypeCodes();
+  } catch (error) {
+    return next(error);
+  }
+
+  if (!activeServiceTypes.includes(serviceType)) {
+    return res.status(400).json({
+      message: `serviceType must be one of the active service types: ${activeServiceTypes.join(", ")}`,
     });
   }
 
@@ -144,6 +158,7 @@ function validateCreateRide(req, res, next) {
   req.body.pickupPointWkt = pickupPointWkt;
   req.body.hasDestination = resolvedHasDestination;
   req.body.pickupAddress = pickupAddress.trim();
+  req.body.serviceType = serviceType;
 
   if (resolvedHasDestination) {
     req.body.dropoffPointWkt = dropoffPointWkt;

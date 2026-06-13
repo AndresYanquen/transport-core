@@ -9,8 +9,14 @@ const BASE_DRIVER_FIELDS = `
   d.vehicle_color,
   d.vehicle_plate,
   d.vehicle_type,
+  d.service_type_code,
   d.rating,
-  d.total_trips,
+  (
+    SELECT COUNT(*)::integer
+    FROM rides r
+    WHERE r.driver_id = d.user_id
+      AND r.status = 'completed'
+  ) AS total_trips,
   d.status,
   d.documents,
   d.onboarded_at,
@@ -59,6 +65,7 @@ function mapDriverRow(row) {
     vehicleColor: row.vehicle_color,
     vehiclePlate: row.vehicle_plate,
     vehicleType: row.vehicle_type,
+    serviceType: row.service_type_code,
     rating: Number(row.rating ?? 0),
     totalTrips: Number(row.total_trips ?? 0),
     status: row.status,

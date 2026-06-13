@@ -44,8 +44,6 @@ exports.up = async function up(knex) {
 
     table.index(["role"], "users_role_idx");
     table.index(["status"], "users_status_idx");
-    table.index(["email_verified"], "users_email_verified_idx");
-    table.index(["phone_verified"], "users_phone_verified_idx");
   });
 
   await knex.schema.raw(`
@@ -64,6 +62,79 @@ exports.up = async function up(knex) {
     $$ LANGUAGE 'plpgsql';
   `);
 
+  await knex.schema.createTable("service_types", (table) => {
+    table
+      .uuid("id")
+      .primary()
+      .defaultTo(knex.raw("gen_random_uuid()"));
+    table.string("code", 50).notNullable().unique();
+    table.string("name", 100).notNullable();
+    table.text("description");
+    table.string("icon", 100);
+    table.decimal("base_price", 10, 2).notNullable().defaultTo(0);
+    table.boolean("is_active").notNullable().defaultTo(true);
+    table.integer("sort_order").notNullable().defaultTo(0);
+    table.timestamp("created_at").notNullable().defaultTo(knex.fn.now());
+    table.timestamp("updated_at").notNullable().defaultTo(knex.fn.now());
+
+    table.index(["is_active", "sort_order"], "service_types_active_sort_idx");
+  });
+
+  await knex.schema.raw(`
+    ALTER TABLE service_types
+    ADD CONSTRAINT service_types_code_not_blank_check
+    CHECK (length(trim(code)) > 0);
+  `);
+
+  await knex.schema.raw(`
+    ALTER TABLE service_types
+    ADD CONSTRAINT service_types_name_not_blank_check
+    CHECK (length(trim(name)) > 0);
+  `);
+
+  await knex.schema.raw(`
+    ALTER TABLE service_types
+    ADD CONSTRAINT service_types_base_price_check
+    CHECK (base_price >= 0);
+  `);
+
+  await knex.schema.raw(`
+    CREATE TRIGGER set_service_types_updated_at
+    BEFORE UPDATE ON service_types
+    FOR EACH ROW
+    EXECUTE FUNCTION update_timestamp();
+  `);
+
+  await knex("service_types").insert([
+    {
+      code: "standard",
+      name: "Standard",
+      description: "Default everyday ride option.",
+      icon: "car",
+      base_price: 0,
+      is_active: true,
+      sort_order: 10,
+    },
+    {
+      code: "premium",
+      name: "Premium",
+      description: "Higher comfort ride option.",
+      icon: "gem",
+      base_price: 7500,
+      is_active: true,
+      sort_order: 20,
+    },
+    {
+      code: "pool",
+      name: "Pool",
+      description: "Shared ride option.",
+      icon: "users",
+      base_price: 0,
+      is_active: true,
+      sort_order: 30,
+    },
+  ]);
+
   await knex.schema.createTable("clients", (table) => {
     table
       .uuid("user_id")
@@ -72,10 +143,7 @@ exports.up = async function up(knex) {
       .inTable("users")
       .onDelete("CASCADE");
     table.string("default_payment_method", 100);
-    table.string("preferred_language", 10);
     table.decimal("rating", 3, 2).defaultTo(0);
-    table.integer("total_trips").defaultTo(0);
-    table.jsonb("preferences").defaultTo(knex.raw("'{}'::jsonb"));
     table.specificType("home_location", "geography(Point, 4326)");
     table.timestamp("created_at").notNullable().defaultTo(knex.fn.now());
     table.timestamp("updated_at").notNullable().defaultTo(knex.fn.now());
@@ -95,14 +163,23 @@ exports.up = async function up(knex) {
     table.string("vehicle_color", 50);
     table.string("vehicle_plate", 50).notNullable();
     table.string("vehicle_type", 50);
+    table
+      .string("service_type_code", 50)
+      .notNullable()
+      .defaultTo("standard")
+      .references("code")
+      .inTable("service_types")
+      .onUpdate("CASCADE")
+      .onDelete("RESTRICT");
     table.decimal("rating", 3, 2).defaultTo(0);
-    table.integer("total_trips").defaultTo(0);
     table
       .string("status", 50)
       .notNullable()
       .defaultTo("offline");
     table.jsonb("documents").defaultTo(knex.raw("'{}'::jsonb"));
     table.specificType("current_location", "geography(Point, 4326)");
+    table.double("heading_degrees");
+    table.double("speed_kmh");
     table.timestamp("onboarded_at").defaultTo(knex.fn.now());
     table.timestamp("created_at").notNullable().defaultTo(knex.fn.now());
     table.timestamp("updated_at").notNullable().defaultTo(knex.fn.now());
@@ -139,6 +216,11 @@ exports.up = async function up(knex) {
     ON drivers
     USING GIST (current_location);
   `);
+
+  await knex.schema.raw(`
+    CREATE INDEX drivers_service_type_code_idx
+    ON drivers (service_type_code);
+  `);
 };
 
 /**
@@ -147,6 +229,9 @@ exports.up = async function up(knex) {
 exports.down = async function down(knex) {
   await knex.schema.raw(`
     DROP INDEX IF EXISTS drivers_current_location_idx;
+  `);
+  await knex.schema.raw(`
+    DROP INDEX IF EXISTS drivers_service_type_code_idx;
   `);
   await knex.schema.raw(`
     DROP INDEX IF EXISTS clients_home_location_idx;
@@ -161,10 +246,14 @@ exports.down = async function down(knex) {
     DROP TRIGGER IF EXISTS set_users_updated_at ON users;
   `);
   await knex.schema.raw(`
+    DROP TRIGGER IF EXISTS set_service_types_updated_at ON service_types;
+  `);
+  await knex.schema.raw(`
     DROP FUNCTION IF EXISTS update_timestamp;
   `);
 
   await knex.schema.dropTableIfExists("drivers");
   await knex.schema.dropTableIfExists("clients");
+  await knex.schema.dropTableIfExists("service_types");
   await knex.schema.dropTableIfExists("users");
 };

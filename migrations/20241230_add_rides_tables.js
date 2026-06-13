@@ -22,7 +22,11 @@ exports.up = async function up(knex) {
     table
       .string("service_type", 50)
       .notNullable()
-      .defaultTo("standard");
+      .defaultTo("standard")
+      .references("code")
+      .inTable("service_types")
+      .onUpdate("CASCADE")
+      .onDelete("RESTRICT");
     table.string("pickup_address", 255);
     table.string("dropoff_address", 255);
     table.boolean("has_destination").notNullable().defaultTo(false);
@@ -89,6 +93,18 @@ exports.up = async function up(knex) {
     BEFORE UPDATE ON rides
     FOR EACH ROW
     EXECUTE FUNCTION update_timestamp();
+  `);
+
+  await knex.schema.raw(`
+    CREATE UNIQUE INDEX rides_one_active_per_client_idx
+    ON rides (client_id)
+    WHERE status NOT IN (
+      'completed',
+      'canceled_by_client',
+      'canceled_by_driver',
+      'canceled_by_system',
+      'no_show'
+    );
   `);
 
   await knex.schema.createTable("ride_events", (table) => {
@@ -173,6 +189,9 @@ exports.down = async function down(knex) {
 
   await knex.schema.raw(`
     DROP TRIGGER IF EXISTS set_rides_updated_at ON rides;
+  `);
+  await knex.schema.raw(`
+    DROP INDEX IF EXISTS rides_one_active_per_client_idx;
   `);
   await knex.schema.raw(`
     ALTER TABLE rides
