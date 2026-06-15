@@ -17,7 +17,10 @@ function handleDatabaseError(error) {
 async function listServiceTypes(user, options = {}) {
   const includeInactive =
     String(user?.role || "").toLowerCase() === "admin" && options.includeInactive;
-  const serviceTypes = await ServiceTypeModel.list({ includeInactive });
+  const serviceTypes = await ServiceTypeModel.list({
+    includeInactive,
+    category: options.category,
+  });
 
   return { serviceTypes };
 }

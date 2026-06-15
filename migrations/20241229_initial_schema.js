@@ -68,9 +68,11 @@ exports.up = async function up(knex) {
       .primary()
       .defaultTo(knex.raw("gen_random_uuid()"));
     table.string("code", 50).notNullable().unique();
+    table.string("category", 50).notNullable().defaultTo("ride");
     table.string("name", 100).notNullable();
     table.text("description");
     table.string("icon", 100);
+    table.string("color", 20);
     table.decimal("base_price", 10, 2).notNullable().defaultTo(0);
     table.boolean("is_active").notNullable().defaultTo(true);
     table.integer("sort_order").notNullable().defaultTo(0);
@@ -108,30 +110,102 @@ exports.up = async function up(knex) {
   await knex("service_types").insert([
     {
       code: "standard",
+      category: "ride",
       name: "Standard",
       description: "Default everyday ride option.",
       icon: "car",
+      color: "#2563EB",
       base_price: 0,
       is_active: true,
       sort_order: 10,
     },
     {
       code: "premium",
+      category: "ride",
       name: "Premium",
       description: "Higher comfort ride option.",
       icon: "gem",
+      color: "#7C3AED",
       base_price: 7500,
       is_active: true,
       sort_order: 20,
     },
     {
+      code: "xl",
+      category: "ride",
+      name: "XL",
+      description: "Larger vehicle ride option.",
+      icon: "bus",
+      color: "#0F766E",
+      base_price: 10000,
+      is_active: true,
+      sort_order: 25,
+    },
+    {
       code: "pool",
+      category: "ride",
       name: "Pool",
       description: "Shared ride option.",
       icon: "users",
+      color: "#F59E0B",
       base_price: 0,
       is_active: true,
       sort_order: 30,
+    },
+    {
+      code: "package_delivery",
+      category: "delivery",
+      name: "Package Delivery",
+      description: "Point-to-point package delivery.",
+      icon: "package",
+      color: "#059669",
+      base_price: 5000,
+      is_active: true,
+      sort_order: 110,
+    },
+    {
+      code: "food_delivery",
+      category: "delivery",
+      name: "Food Delivery",
+      description: "Food pickup and delivery.",
+      icon: "utensils",
+      color: "#EA580C",
+      base_price: 4000,
+      is_active: true,
+      sort_order: 120,
+    },
+    {
+      code: "car_unstuck",
+      category: "roadside",
+      name: "Car Unstuck",
+      description: "Help getting a stuck vehicle moving again.",
+      icon: "wrench",
+      color: "#DC2626",
+      base_price: 20000,
+      is_active: true,
+      sort_order: 210,
+    },
+    {
+      code: "jump_start",
+      category: "roadside",
+      name: "Jump Start",
+      description: "Battery jump-start assistance.",
+      icon: "battery-charging",
+      color: "#CA8A04",
+      base_price: 15000,
+      is_active: true,
+      sort_order: 220,
+    },
+    {
+      code: "tire_change",
+      category: "roadside",
+      name: "Tire Change",
+      description: "Flat tire replacement assistance.",
+      icon: "disc",
+      color: "#475569",
+      base_price: 18000,
+      is_active: true,
+      sort_order: 230,
     },
   ]);
 
@@ -163,14 +237,6 @@ exports.up = async function up(knex) {
     table.string("vehicle_color", 50);
     table.string("vehicle_plate", 50).notNullable();
     table.string("vehicle_type", 50);
-    table
-      .string("service_type_code", 50)
-      .notNullable()
-      .defaultTo("standard")
-      .references("code")
-      .inTable("service_types")
-      .onUpdate("CASCADE")
-      .onDelete("RESTRICT");
     table.decimal("rating", 3, 2).defaultTo(0);
     table
       .string("status", 50)
@@ -218,8 +284,26 @@ exports.up = async function up(knex) {
   `);
 
   await knex.schema.raw(`
-    CREATE INDEX drivers_service_type_code_idx
-    ON drivers (service_type_code);
+    CREATE TABLE driver_service_types (
+      driver_id uuid NOT NULL REFERENCES drivers(user_id) ON DELETE CASCADE,
+      service_type_code varchar(50) NOT NULL REFERENCES service_types(code) ON UPDATE CASCADE ON DELETE RESTRICT,
+      is_active boolean NOT NULL DEFAULT true,
+      created_at timestamp NOT NULL DEFAULT NOW(),
+      updated_at timestamp NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (driver_id, service_type_code)
+    );
+  `);
+
+  await knex.schema.raw(`
+    CREATE INDEX driver_service_types_service_active_idx
+    ON driver_service_types (service_type_code, is_active);
+  `);
+
+  await knex.schema.raw(`
+    CREATE TRIGGER set_driver_service_types_updated_at
+    BEFORE UPDATE ON driver_service_types
+    FOR EACH ROW
+    EXECUTE FUNCTION update_timestamp();
   `);
 };
 
@@ -231,7 +315,10 @@ exports.down = async function down(knex) {
     DROP INDEX IF EXISTS drivers_current_location_idx;
   `);
   await knex.schema.raw(`
-    DROP INDEX IF EXISTS drivers_service_type_code_idx;
+    DROP TRIGGER IF EXISTS set_driver_service_types_updated_at ON driver_service_types;
+  `);
+  await knex.schema.raw(`
+    DROP INDEX IF EXISTS driver_service_types_service_active_idx;
   `);
   await knex.schema.raw(`
     DROP INDEX IF EXISTS clients_home_location_idx;
@@ -252,6 +339,7 @@ exports.down = async function down(knex) {
     DROP FUNCTION IF EXISTS update_timestamp;
   `);
 
+  await knex.schema.dropTableIfExists("driver_service_types");
   await knex.schema.dropTableIfExists("drivers");
   await knex.schema.dropTableIfExists("clients");
   await knex.schema.dropTableIfExists("service_types");

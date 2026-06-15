@@ -16,7 +16,17 @@ const BASE_FIELDS = `
   d.vehicle_color,
   d.vehicle_plate,
   d.vehicle_type,
-  d.service_type_code,
+  COALESCE(
+    (
+      SELECT array_agg(dst.service_type_code ORDER BY st.sort_order ASC, st.name ASC)
+      FROM driver_service_types dst
+      JOIN service_types st ON st.code = dst.service_type_code
+      WHERE dst.driver_id = d.user_id
+        AND dst.is_active = true
+        AND st.is_active = true
+    ),
+    ARRAY[]::text[]
+  ) AS service_types,
   u.first_name,
   u.last_name,
   u.phone_number
@@ -49,7 +59,7 @@ function toPreferredDriver(row) {
         color: row.vehicle_color,
         plate: row.vehicle_plate,
         type: row.vehicle_type,
-        serviceType: row.service_type_code,
+        serviceTypes: row.service_types || [],
       },
     },
   };

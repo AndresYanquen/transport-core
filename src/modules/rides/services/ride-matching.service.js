@@ -74,6 +74,7 @@ async function matchPendingRidesForDriver(driver, {
     driverLocationWkt,
     radiusMeters,
     limit,
+    serviceTypes: Array.isArray(driver.serviceTypes) ? driver.serviceTypes : [],
   });
 
   const RideService = require("./ride.service");

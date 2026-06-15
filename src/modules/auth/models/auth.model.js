@@ -39,7 +39,17 @@ const baseUserSelect = `
     d.vehicle_color AS driver_vehicle_color,
     d.vehicle_plate AS driver_vehicle_plate,
     d.vehicle_type AS driver_vehicle_type,
-    d.service_type_code AS driver_service_type,
+    COALESCE(
+      (
+        SELECT array_agg(dst.service_type_code ORDER BY st.sort_order ASC, st.name ASC)
+        FROM driver_service_types dst
+        JOIN service_types st ON st.code = dst.service_type_code
+        WHERE dst.driver_id = d.user_id
+          AND dst.is_active = true
+          AND st.is_active = true
+      ),
+      ARRAY[]::text[]
+    ) AS driver_service_types,
     d.rating AS driver_rating,
     (
       SELECT COUNT(*)::integer
@@ -185,7 +195,6 @@ class AuthModel {
               vehicle_color,
               vehicle_plate,
               vehicle_type,
-              service_type_code,
               documents,
               current_location
             )
@@ -199,12 +208,11 @@ class AuthModel {
               $7,
               $8,
               $9,
-              $10,
               CASE
-                WHEN $11::double precision IS NULL OR $12::double precision IS NULL
+                WHEN $10::double precision IS NULL OR $11::double precision IS NULL
                   THEN NULL
                 ELSE ST_SetSRID(
-                  ST_MakePoint($12::double precision, $11::double precision),
+                  ST_MakePoint($11::double precision, $10::double precision),
                   4326
                 )::geography
               END
@@ -219,11 +227,20 @@ class AuthModel {
             driverProfile.vehicleColor ?? null,
             driverProfile.vehiclePlate,
             driverProfile.vehicleType ?? null,
-            driverProfile.serviceType || "standard",
             JSON.stringify(driverProfile.documents ?? {}),
             locationLat,
             locationLng,
           ]
+        );
+
+        await client.query(
+          `
+            INSERT INTO driver_service_types (driver_id, service_type_code, is_active)
+            VALUES ($1, $2, true)
+            ON CONFLICT (driver_id, service_type_code)
+            DO UPDATE SET is_active = true, updated_at = NOW()
+          `,
+          [userId, driverProfile.serviceType || "standard"]
         );
       }
 
@@ -323,7 +340,7 @@ class AuthModel {
           vehicleColor: row.driver_vehicle_color,
           vehiclePlate: row.driver_vehicle_plate,
           vehicleType: row.driver_vehicle_type,
-          serviceType: row.driver_service_type,
+          serviceTypes: row.driver_service_types || [],
           rating: row.driver_rating,
           totalTrips: row.driver_total_trips,
           status: row.driver_status,

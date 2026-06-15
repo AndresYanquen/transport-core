@@ -16,6 +16,33 @@ function customerEmail(n) {
   return `customer${n}@test.com`;
 }
 
+function demoDriverState(n) {
+  const clusters = [
+    { lat: 40.7128, lng: -74.0060 },
+    { lat: 4.711, lng: -74.0721 },
+    { lat: 5.535, lng: -73.367 },
+    { lat: 6.12345, lng: -74.12345 },
+  ];
+
+  if (n > 24) {
+    return {
+      status: "offline",
+      location: null,
+    };
+  }
+
+  const cluster = clusters[(n - 1) % clusters.length];
+  const offset = Math.floor((n - 1) / clusters.length) * 0.0001;
+
+  return {
+    status: "online",
+    location: {
+      lat: cluster.lat + offset,
+      lng: cluster.lng + offset,
+    },
+  };
+}
+
 exports.seed = async function seed(knex) {
   const driverCount = toNumber(process.env.DRIVER_COUNT, 100);
   const customerCount = toNumber(process.env.CUSTOMER_COUNT, 500);
@@ -55,6 +82,7 @@ exports.seed = async function seed(knex) {
       }
 
       const driverProfile = await trx("drivers").select("user_id").where({ user_id: userId }).first();
+      const demoState = demoDriverState(n);
       if (!driverProfile) {
         await trx("drivers").insert({
           user_id: userId,
@@ -65,15 +93,58 @@ exports.seed = async function seed(knex) {
           vehicle_color: "Gray",
           vehicle_plate: `SIM-${String(n).padStart(4, "0")}`,
           vehicle_type: "Sedan",
-          service_type_code: "standard",
           documents: JSON.stringify({ sim: true }),
           rating: 0,
-          status: "offline",
-          current_location: null,
+          status: demoState.status,
+          current_location: demoState.location
+            ? trx.raw("ST_GeogFromText(?)", [
+                `POINT(${demoState.location.lng} ${demoState.location.lat})`,
+              ])
+            : null,
           onboarded_at: trx.fn.now(),
           created_at: trx.fn.now(),
           updated_at: trx.fn.now(),
         });
+      } else {
+        await trx("drivers")
+          .where({ user_id: userId })
+          .update({
+            status: demoState.status,
+            current_location: demoState.location
+              ? trx.raw("ST_GeogFromText(?)", [
+                  `POINT(${demoState.location.lng} ${demoState.location.lat})`,
+                ])
+              : null,
+            updated_at: trx.fn.now(),
+          });
+      }
+
+      const serviceTypeCodes =
+        n <= 24
+          ? [
+              "standard",
+              "premium",
+              "pool",
+              "xl",
+              "deliver",
+              "package_delivery",
+              "food_delivery",
+              "car_unstuck",
+              "jump_start",
+              "tire_change",
+            ]
+          : ["standard"];
+
+      for (const serviceTypeCode of serviceTypeCodes) {
+        await trx("driver_service_types").insert({
+          driver_id: userId,
+          service_type_code: serviceTypeCode,
+          is_active: true,
+          created_at: trx.fn.now(),
+          updated_at: trx.fn.now(),
+        })
+        .onConflict(["driver_id", "service_type_code"])
+        .merge({ is_active: true, updated_at: trx.fn.now() });
       }
     }
 

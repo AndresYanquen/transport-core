@@ -80,15 +80,37 @@ exports.seed = async function seed(knex) {
     vehicle_color: "Black",
     vehicle_plate: "ABC-123",
     vehicle_type: "Sedan",
-    service_type_code: "standard",
     documents: JSON.stringify({ insurance: true, registration: true }),
     rating: 4.9,
     status: "online",
-    current_location: knex.raw("ST_GeogFromText(?)", ["POINT(-118.2437 34.0522)"]),
+    current_location: knex.raw("ST_GeogFromText(?)", ["POINT(-74.0060 40.7128)"]),
     onboarded_at: knex.fn.now(),
     created_at: knex.fn.now(),
     updated_at: knex.fn.now(),
   });
+
+  for (const serviceTypeCode of [
+    "standard",
+    "premium",
+    "pool",
+    "xl",
+    "deliver",
+    "package_delivery",
+    "food_delivery",
+    "car_unstuck",
+    "jump_start",
+    "tire_change",
+  ]) {
+    await knex("driver_service_types").insert({
+      driver_id: driverUser.id,
+      service_type_code: serviceTypeCode,
+      is_active: true,
+      created_at: knex.fn.now(),
+      updated_at: knex.fn.now(),
+    })
+    .onConflict(["driver_id", "service_type_code"])
+    .merge({ is_active: true, updated_at: knex.fn.now() });
+  }
 
   await knex("users").insert({
     email: "admin@example.com",

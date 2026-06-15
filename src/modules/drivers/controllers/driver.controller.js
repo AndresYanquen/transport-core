@@ -29,7 +29,30 @@ async function updateStatus(req, res, next) {
   }
 }
 
+async function listServiceTypes(req, res, next) {
+  try {
+    const result = await DriverService.listServiceTypes(req.params.driverId);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function replaceServiceTypes(req, res, next) {
+  try {
+    const result = await DriverService.replaceServiceTypes(
+      req.params.driverId,
+      req.body.serviceTypes
+    );
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   updateLocation,
   updateStatus,
+  listServiceTypes,
+  replaceServiceTypes,
 };

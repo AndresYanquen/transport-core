@@ -138,10 +138,26 @@ async function setDriverStatus(driverId, status, dbClient) {
   return driver;
 }
 
+async function listServiceTypes(driverId) {
+  await ensureDriver(driverId);
+  return {
+    serviceTypes: await DriverModel.listServiceTypes(driverId),
+  };
+}
+
+async function replaceServiceTypes(driverId, serviceTypeCodes) {
+  await ensureDriver(driverId);
+  return {
+    serviceTypes: await DriverModel.replaceServiceTypes(driverId, serviceTypeCodes),
+  };
+}
+
 module.exports = {
   updateLocation,
   updateStatus,
   findAvailableDriversNear,
   ensureDriverForUpdate,
   setDriverStatus,
+  listServiceTypes,
+  replaceServiceTypes,
 };

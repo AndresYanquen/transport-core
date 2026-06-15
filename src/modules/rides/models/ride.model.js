@@ -258,7 +258,17 @@ class RideModel {
           d.vehicle_color AS driver_vehicle_color,
           d.vehicle_plate AS driver_vehicle_plate,
           d.vehicle_type AS driver_vehicle_type,
-          d.service_type_code AS driver_service_type,
+          COALESCE(
+            (
+              SELECT array_agg(dst.service_type_code ORDER BY st.sort_order ASC, st.name ASC)
+              FROM driver_service_types dst
+              JOIN service_types st ON st.code = dst.service_type_code
+              WHERE dst.driver_id = d.user_id
+                AND dst.is_active = true
+                AND st.is_active = true
+            ),
+            ARRAY[]::text[]
+          ) AS driver_service_types,
           d.status AS driver_status,
           ST_AsGeoJSON(d.current_location)::jsonb AS driver_current_location_geojson,
           d.heading_degrees AS driver_heading_degrees,
@@ -461,7 +471,7 @@ class RideModel {
               vehicleColor: row.driver_vehicle_color ?? null,
               vehiclePlate: row.driver_vehicle_plate ?? null,
               vehicleType: row.driver_vehicle_type ?? null,
-              serviceType: row.driver_service_type ?? null,
+              serviceTypes: row.driver_service_types || [],
               status: row.driver_status ?? null,
               currentLocation: (() => {
                 const geo = parseJson(row.driver_current_location_geojson);
@@ -684,6 +694,8 @@ class RideModel {
       driverLocationWkt,
       radiusMeters = 2000,
       limit = 10,
+      serviceType = null,
+      serviceTypes = [],
     } = {},
     dbClient
   ) {
@@ -692,6 +704,19 @@ class RideModel {
     }
 
     const executor = getExecutor(dbClient);
+    const params = [driverId, driverLocationWkt, radiusMeters];
+    const requestedServiceTypes = Array.isArray(serviceTypes) && serviceTypes.length
+      ? serviceTypes
+      : serviceType
+      ? [serviceType]
+      : [];
+    const serviceTypeClause = requestedServiceTypes.length
+      ? `AND r.service_type = ANY($${params.push(requestedServiceTypes)}::text[])`
+      : "";
+
+    params.push(limit);
+    const limitIndex = params.length;
+
     const { rows } = await executor.query(
       `
         SELECT
@@ -704,6 +729,7 @@ class RideModel {
         WHERE r.status = 'pending_driver'
           AND r.pickup_point IS NOT NULL
           AND ST_DWithin(r.pickup_point, ST_GeogFromText($2), $3)
+          ${serviceTypeClause}
           AND NOT EXISTS (
             SELECT 1
             FROM ride_driver_invites i
@@ -711,9 +737,9 @@ class RideModel {
               AND i.driver_id = $1
           )
         ORDER BY distance_meters ASC, r.requested_at ASC
-        LIMIT $4
+        LIMIT $${limitIndex}
       `,
-      [driverId, driverLocationWkt, radiusMeters, limit]
+      params
     );
 
     return rows;

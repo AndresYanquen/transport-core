@@ -1,4 +1,6 @@
 const CODE_PATTERN = /^[a-z][a-z0-9_-]{1,49}$/;
+const CATEGORY_PATTERN = /^[a-z][a-z0-9_-]{1,49}$/;
+const COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
 function hasOwn(object, key) {
   return Object.prototype.hasOwnProperty.call(object, key);
@@ -35,7 +37,18 @@ function validateCodeParam(req, res, next) {
 function validateListQuery(req, res, next) {
   req.serviceTypeQuery = {
     includeInactive: req.query.includeInactive === "true",
+    category:
+      typeof req.query.category === "string" && req.query.category.trim()
+        ? req.query.category.trim()
+        : null,
   };
+
+  if (req.serviceTypeQuery.category && !CATEGORY_PATTERN.test(req.serviceTypeQuery.category)) {
+    return res.status(400).json({
+      message: "category must contain only lowercase letters, numbers, underscores, or hyphens.",
+    });
+  }
+
   next();
 }
 
@@ -51,6 +64,13 @@ function validateCreateServiceType(req, res, next) {
 
   if (!isNonBlankString(body.name)) {
     return res.status(400).json({ message: "name is required." });
+  }
+
+  const category = hasOwn(body, "category") ? body.category : "ride";
+  if (!isNonBlankString(category) || !CATEGORY_PATTERN.test(category.trim())) {
+    return res.status(400).json({
+      message: "category must contain only lowercase letters, numbers, underscores, or hyphens.",
+    });
   }
 
   if (
@@ -69,6 +89,14 @@ function validateCreateServiceType(req, res, next) {
     });
   }
 
+  if (hasOwn(body, "color") && body.color !== null) {
+    if (typeof body.color !== "string" || !COLOR_PATTERN.test(body.color.trim())) {
+      return res.status(400).json({
+        message: "color must be a hex color like #2563EB or null when provided.",
+      });
+    }
+  }
+
   const basePrice = hasOwn(body, "basePrice") ? parseMoney(body.basePrice) : 0;
   if (basePrice === null || basePrice < 0) {
     return res.status(400).json({ message: "basePrice must be a nonnegative number." });
@@ -85,9 +113,11 @@ function validateCreateServiceType(req, res, next) {
 
   req.serviceTypePayload = {
     code: body.code.trim(),
+    category: category.trim(),
     name: body.name.trim(),
     description: hasOwn(body, "description") ? body.description?.trim() || null : null,
     icon: hasOwn(body, "icon") ? body.icon?.trim() || null : null,
+    color: hasOwn(body, "color") ? body.color?.trim() || null : null,
     basePrice,
     isActive: hasOwn(body, "isActive") ? body.isActive : true,
     sortOrder,
@@ -106,6 +136,15 @@ function validateUpdateServiceType(req, res, next) {
     payload.name = body.name.trim();
   }
 
+  if (hasOwn(body, "category")) {
+    if (!isNonBlankString(body.category) || !CATEGORY_PATTERN.test(body.category.trim())) {
+      return res.status(400).json({
+        message: "category must contain only lowercase letters, numbers, underscores, or hyphens.",
+      });
+    }
+    payload.category = body.category.trim();
+  }
+
   if (hasOwn(body, "description")) {
     if (body.description !== null && typeof body.description !== "string") {
       return res.status(400).json({
@@ -122,6 +161,19 @@ function validateUpdateServiceType(req, res, next) {
     }
     payload.hasIcon = true;
     payload.icon = body.icon?.trim() || null;
+  }
+
+  if (hasOwn(body, "color")) {
+    if (
+      body.color !== null &&
+      (typeof body.color !== "string" || !COLOR_PATTERN.test(body.color.trim()))
+    ) {
+      return res.status(400).json({
+        message: "color must be a hex color like #2563EB or null.",
+      });
+    }
+    payload.hasColor = true;
+    payload.color = body.color?.trim() || null;
   }
 
   if (hasOwn(body, "basePrice")) {
@@ -152,12 +204,13 @@ function validateUpdateServiceType(req, res, next) {
   if (!Object.keys(payload).length) {
     return res.status(400).json({
       message:
-        "At least one of name, description, icon, basePrice, isActive, or sortOrder is required.",
+        "At least one of name, category, description, icon, color, basePrice, isActive, or sortOrder is required.",
     });
   }
 
   payload.hasDescription = Boolean(payload.hasDescription);
   payload.hasIcon = Boolean(payload.hasIcon);
+  payload.hasColor = Boolean(payload.hasColor);
 
   req.serviceTypePayload = payload;
   next();
@@ -170,5 +223,6 @@ module.exports = {
   validateUpdateServiceType,
   __private: {
     CODE_PATTERN,
+    COLOR_PATTERN,
   },
 };

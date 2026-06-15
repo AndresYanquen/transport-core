@@ -34,4 +34,19 @@ router.patch(
   DriverController.updateStatus
 );
 
+router.get(
+  "/:driverId/service-types",
+  authorizeRoles("driver", "admin"),
+  ensureDriverOwnsResource,
+  DriverController.listServiceTypes
+);
+
+router.put(
+  "/:driverId/service-types",
+  authorizeRoles("driver", "admin"),
+  ensureDriverOwnsResource,
+  driverMiddleware.replaceServiceTypes,
+  DriverController.replaceServiceTypes
+);
+
 module.exports = router;

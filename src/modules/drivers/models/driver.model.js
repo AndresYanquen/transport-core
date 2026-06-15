@@ -9,7 +9,17 @@ const BASE_DRIVER_FIELDS = `
   d.vehicle_color,
   d.vehicle_plate,
   d.vehicle_type,
-  d.service_type_code,
+  COALESCE(
+    (
+      SELECT array_agg(dst.service_type_code ORDER BY st.sort_order ASC, st.name ASC)
+      FROM driver_service_types dst
+      JOIN service_types st ON st.code = dst.service_type_code
+      WHERE dst.driver_id = d.user_id
+        AND dst.is_active = true
+        AND st.is_active = true
+    ),
+    ARRAY[]::text[]
+  ) AS service_types,
   d.rating,
   (
     SELECT COUNT(*)::integer
@@ -65,7 +75,7 @@ function mapDriverRow(row) {
     vehicleColor: row.vehicle_color,
     vehiclePlate: row.vehicle_plate,
     vehicleType: row.vehicle_type,
-    serviceType: row.service_type_code,
+    serviceTypes: row.service_types || [],
     rating: Number(row.rating ?? 0),
     totalTrips: Number(row.total_trips ?? 0),
     status: row.status,
@@ -148,6 +158,7 @@ async function findAvailableDriversNear(pointWkt, {
   radiusMeters = 2000,
   limit = 5,
   excludeDriverIds = [],
+  serviceType = null,
   dbClient,
 } = {}) {
   if (!pointWkt) {
@@ -157,10 +168,26 @@ async function findAvailableDriversNear(pointWkt, {
   const executor = getExecutor(dbClient);
   const params = [pointWkt, radiusMeters];
   let excludeClause = "";
+  let serviceTypeClause = "";
 
   if (excludeDriverIds.length > 0) {
     params.push(excludeDriverIds);
     excludeClause = `AND d.user_id <> ALL($${params.length}::uuid[])`;
+  }
+
+  if (serviceType) {
+    params.push(serviceType);
+    serviceTypeClause = `
+      AND EXISTS (
+        SELECT 1
+        FROM driver_service_types dst
+        JOIN service_types st ON st.code = dst.service_type_code
+        WHERE dst.driver_id = d.user_id
+          AND dst.service_type_code = $${params.length}
+          AND dst.is_active = true
+          AND st.is_active = true
+      )
+    `;
   }
 
   params.push(limit);
@@ -180,6 +207,7 @@ async function findAvailableDriversNear(pointWkt, {
         AND d.current_location IS NOT NULL
         AND ST_DWithin(d.current_location, ST_GeogFromText($1), $2)
         ${excludeClause}
+        ${serviceTypeClause}
       ORDER BY distance_meters ASC
       LIMIT $${limitIndex}
     `,
@@ -189,9 +217,95 @@ async function findAvailableDriversNear(pointWkt, {
   return rows.map(mapDriverRow);
 }
 
+async function listServiceTypes(driverId, dbClient) {
+  const executor = getExecutor(dbClient);
+  const { rows } = await executor.query(
+    `
+      SELECT
+        st.code,
+        st.category,
+        st.name,
+        st.description,
+        st.icon,
+        st.base_price,
+        st.is_active,
+        st.sort_order,
+        dst.is_active AS driver_is_active,
+        dst.created_at,
+        dst.updated_at
+      FROM driver_service_types dst
+      JOIN service_types st ON st.code = dst.service_type_code
+      WHERE dst.driver_id = $1
+      ORDER BY st.sort_order ASC, st.name ASC
+    `,
+    [driverId]
+  );
+
+  return rows.map((row) => ({
+    code: row.code,
+    category: row.category,
+    name: row.name,
+    description: row.description,
+    icon: row.icon,
+    basePrice: Number(row.base_price ?? 0),
+    isActive: row.is_active,
+    sortOrder: row.sort_order,
+    driverIsActive: row.driver_is_active,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+async function replaceServiceTypes(driverId, serviceTypeCodes, dbClient) {
+  const executor = getExecutor(dbClient);
+  const uniqueCodes = [...new Set(serviceTypeCodes)];
+
+  const { rows: activeRows } = await executor.query(
+    `
+      SELECT code
+      FROM service_types
+      WHERE code = ANY($1::text[])
+        AND is_active = true
+    `,
+    [uniqueCodes]
+  );
+  const activeCodes = activeRows.map((row) => row.code);
+
+  if (activeCodes.length !== uniqueCodes.length) {
+    const error = new Error("All service types must exist and be active.");
+    error.status = 400;
+    throw error;
+  }
+
+  await executor.query(
+    `
+      UPDATE driver_service_types
+      SET is_active = false
+      WHERE driver_id = $1
+    `,
+    [driverId]
+  );
+
+  for (const code of uniqueCodes) {
+    await executor.query(
+      `
+        INSERT INTO driver_service_types (driver_id, service_type_code, is_active)
+        VALUES ($1, $2, true)
+        ON CONFLICT (driver_id, service_type_code)
+        DO UPDATE SET is_active = true, updated_at = NOW()
+      `,
+      [driverId, code]
+    );
+  }
+
+  return listServiceTypes(driverId, dbClient);
+}
+
 module.exports = {
   updateLocation,
   updateStatus,
   getDriverById,
   findAvailableDriversNear,
+  listServiceTypes,
+  replaceServiceTypes,
 };

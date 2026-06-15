@@ -907,12 +907,20 @@ async function assignDriver({
     const invitedDriverIds = existingInvites.map((invite) => invite.driverId);
     const newDriverIds = [];
     const invitedDriversDetails = [];
+    const workingRide = RideModel.mapRideRow(workingRideRow);
 
     if (driverId) {
       const driver = await DriverService.ensureDriverForUpdate(driverId, dbClient);
 
       if (driver.status !== "online") {
         throw createHttpError(409, "Selected driver is not available for assignment.");
+      }
+
+      if (!Array.isArray(driver.serviceTypes) || !driver.serviceTypes.includes(workingRide.serviceType)) {
+        throw createHttpError(
+          409,
+          "Selected driver does not support this ride service type."
+        );
       }
 
       const existingInvite = existingInvites.find(
@@ -929,9 +937,7 @@ async function assignDriver({
 
       invitedDriversDetails.push(driver);
     } else {
-      const pickupPointWkt = locationToWkt(
-        RideModel.mapRideRow(workingRideRow).pickupLocation
-      );
+      const pickupPointWkt = locationToWkt(workingRide.pickupLocation);
 
       if (!pickupPointWkt) {
         throw createHttpError(400, "Ride does not have a valid pickup location.");
@@ -942,6 +948,7 @@ async function assignDriver({
         radiusMeters,
         limit,
         excludeDriverIds: invitedDriverIds,
+        serviceType: workingRide.serviceType,
         dbClient,
       });
 

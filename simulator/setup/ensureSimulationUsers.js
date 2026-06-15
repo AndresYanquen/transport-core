@@ -89,7 +89,6 @@ async function ensureDriver(trx, n, passwordHash) {
       vehicle_color: "Gray",
       vehicle_plate: `SIM-${String(n).padStart(4, "0")}`,
       vehicle_type: "Sedan",
-      service_type_code: "standard",
       documents: JSON.stringify({ sim: true }),
       rating: 0,
       status: "offline",
@@ -99,6 +98,17 @@ async function ensureDriver(trx, n, passwordHash) {
       updated_at: trx.fn.now(),
     });
   }
+
+  await trx("driver_service_types")
+    .insert({
+      driver_id: userId,
+      service_type_code: "standard",
+      is_active: true,
+      created_at: trx.fn.now(),
+      updated_at: trx.fn.now(),
+    })
+    .onConflict(["driver_id", "service_type_code"])
+    .merge({ is_active: true, updated_at: trx.fn.now() });
 }
 
 async function ensureCustomer(trx, n, passwordHash) {

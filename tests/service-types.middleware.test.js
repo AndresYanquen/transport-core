@@ -29,9 +29,11 @@ test("service type create validation accepts valid payload", async () => {
   const result = await runMiddleware(ServiceTypeMiddleware.validateCreateServiceType, {
     body: {
       code: "xl",
+      category: "ride",
       name: "XL",
       description: "Larger vehicle",
       icon: "bus",
+      color: "#0F766E",
       basePrice: "5000",
       isActive: true,
       sortOrder: "40",
@@ -41,9 +43,11 @@ test("service type create validation accepts valid payload", async () => {
   assert.equal(result.nextCalled, true);
   assert.deepEqual(result.req.serviceTypePayload, {
     code: "xl",
+    category: "ride",
     name: "XL",
     description: "Larger vehicle",
     icon: "bus",
+    color: "#0F766E",
     basePrice: 5000,
     isActive: true,
     sortOrder: 40,
@@ -81,6 +85,8 @@ test("service type update validation accepts partial payload", async () => {
   const result = await runMiddleware(ServiceTypeMiddleware.validateUpdateServiceType, {
     body: {
       isActive: false,
+      category: "delivery",
+      color: null,
       sortOrder: 50,
     },
   });
@@ -88,10 +94,27 @@ test("service type update validation accepts partial payload", async () => {
   assert.equal(result.nextCalled, true);
   assert.deepEqual(result.req.serviceTypePayload, {
     isActive: false,
+    category: "delivery",
+    hasColor: true,
+    color: null,
     sortOrder: 50,
     hasDescription: false,
     hasIcon: false,
   });
+});
+
+test("service type create validation rejects invalid color", async () => {
+  const result = await runMiddleware(ServiceTypeMiddleware.validateCreateServiceType, {
+    body: {
+      code: "xl",
+      name: "XL",
+      color: "teal",
+    },
+  });
+
+  assert.equal(result.nextCalled, false);
+  assert.equal(result.res.statusCode, 400);
+  assert.match(result.res.body.message, /color/);
 });
 
 test("service type update validation requires supported fields", async () => {

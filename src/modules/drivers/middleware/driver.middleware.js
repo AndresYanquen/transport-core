@@ -86,7 +86,34 @@ function updateStatus(req, res, next) {
   next();
 }
 
+function replaceServiceTypes(req, res, next) {
+  const { serviceTypes } = req.body || {};
+
+  if (!Array.isArray(serviceTypes) || serviceTypes.length === 0) {
+    return res.status(400).json({
+      message: "serviceTypes must be a non-empty array.",
+    });
+  }
+
+  const invalid = serviceTypes.find(
+    (code) =>
+      typeof code !== "string" ||
+      !/^[a-z][a-z0-9_-]{1,49}$/.test(code.trim())
+  );
+
+  if (invalid) {
+    return res.status(400).json({
+      message:
+        "Each service type code must start with a lowercase letter and contain only lowercase letters, numbers, underscores, or hyphens.",
+    });
+  }
+
+  req.body.serviceTypes = serviceTypes.map((code) => code.trim());
+  next();
+}
+
 module.exports = {
   updateLocation,
   updateStatus,
+  replaceServiceTypes,
 };
