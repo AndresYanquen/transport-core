@@ -27,6 +27,24 @@ class SettingsModel {
 
     return mapSettingRow(rows[0]);
   }
+
+  static async upsert({ key, value, description }) {
+    const { rows } = await query(
+      `
+        INSERT INTO config_settings (key, value, description)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (key)
+        DO UPDATE SET
+          value = EXCLUDED.value,
+          description = COALESCE(EXCLUDED.description, config_settings.description),
+          updated_at = NOW()
+        RETURNING key, value, description, created_at, updated_at
+      `,
+      [key, value, description ?? null]
+    );
+
+    return mapSettingRow(rows[0]);
+  }
 }
 
 module.exports = SettingsModel;

@@ -206,6 +206,21 @@ POST /api/rides
 }
 ```
 
+For service types in the `delivery` category, the request must include a destination
+and a delivery description:
+
+```json
+{
+  "clientId": "<client-user-id>",
+  "pickupAddress": "Sender address",
+  "dropoffAddress": "Recipient address",
+  "pickupLocation": { "lat": 40.748817, "lng": -73.985428 },
+  "dropoffLocation": { "lat": 40.758, "lng": -73.9855 },
+  "serviceType": "package_delivery",
+  "requestDescription": "Small box with documents"
+}
+```
+
 Assign nearest driver (automatic, admin/system):
 
 ```json

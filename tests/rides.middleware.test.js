@@ -39,12 +39,15 @@ function runCreateRideMiddleware(body) {
 }
 
 test("create ride validation accepts active service type from database", async (t) => {
-  const originalListActiveServiceTypeCodes =
-    ServiceTypeService.listActiveServiceTypeCodes;
+  const originalListActiveServiceTypes =
+    ServiceTypeService.listActiveServiceTypes;
 
-  ServiceTypeService.listActiveServiceTypeCodes = async () => ["standard", "xl"];
+  ServiceTypeService.listActiveServiceTypes = async () => [
+    { code: "standard", category: "ride" },
+    { code: "xl", category: "ride" },
+  ];
   t.after(() => {
-    ServiceTypeService.listActiveServiceTypeCodes = originalListActiveServiceTypeCodes;
+    ServiceTypeService.listActiveServiceTypes = originalListActiveServiceTypes;
   });
 
   const result = await runCreateRideMiddleware(
@@ -58,12 +61,14 @@ test("create ride validation accepts active service type from database", async (
 });
 
 test("create ride validation rejects inactive or missing service type", async (t) => {
-  const originalListActiveServiceTypeCodes =
-    ServiceTypeService.listActiveServiceTypeCodes;
+  const originalListActiveServiceTypes =
+    ServiceTypeService.listActiveServiceTypes;
 
-  ServiceTypeService.listActiveServiceTypeCodes = async () => ["standard"];
+  ServiceTypeService.listActiveServiceTypes = async () => [
+    { code: "standard", category: "ride" },
+  ];
   t.after(() => {
-    ServiceTypeService.listActiveServiceTypeCodes = originalListActiveServiceTypeCodes;
+    ServiceTypeService.listActiveServiceTypes = originalListActiveServiceTypes;
   });
 
   const result = await runCreateRideMiddleware(
@@ -78,16 +83,82 @@ test("create ride validation rejects inactive or missing service type", async (t
 });
 
 test("create ride validation defaults service type to standard", async (t) => {
-  const originalListActiveServiceTypeCodes =
-    ServiceTypeService.listActiveServiceTypeCodes;
+  const originalListActiveServiceTypes =
+    ServiceTypeService.listActiveServiceTypes;
 
-  ServiceTypeService.listActiveServiceTypeCodes = async () => ["standard"];
+  ServiceTypeService.listActiveServiceTypes = async () => [
+    { code: "standard", category: "ride" },
+  ];
   t.after(() => {
-    ServiceTypeService.listActiveServiceTypeCodes = originalListActiveServiceTypeCodes;
+    ServiceTypeService.listActiveServiceTypes = originalListActiveServiceTypes;
   });
 
   const result = await runCreateRideMiddleware(buildValidRideBody());
 
   assert.equal(result.nextCalled, true);
   assert.equal(result.req.body.serviceType, "standard");
+});
+
+test("create ride validation requires destination and description for delivery service types", async (t) => {
+  const originalListActiveServiceTypes =
+    ServiceTypeService.listActiveServiceTypes;
+
+  ServiceTypeService.listActiveServiceTypes = async () => [
+    { code: "package_delivery", category: "delivery" },
+  ];
+  t.after(() => {
+    ServiceTypeService.listActiveServiceTypes = originalListActiveServiceTypes;
+  });
+
+  const missingDestination = await runCreateRideMiddleware(
+    buildValidRideBody({
+      serviceType: "package_delivery",
+      requestDescription: "Small box",
+    })
+  );
+
+  assert.equal(missingDestination.nextCalled, false);
+  assert.equal(missingDestination.res.statusCode, 400);
+  assert.match(missingDestination.res.body.message, /Delivery service types/);
+
+  const missingDescription = await runCreateRideMiddleware(
+    buildValidRideBody({
+      serviceType: "package_delivery",
+      pickupAddress: "Sender",
+      dropoffAddress: "Recipient",
+      pickupLocation: { lat: 4.711, lng: -74.0721 },
+      dropoffLocation: { lat: 4.72, lng: -74.08 },
+    })
+  );
+
+  assert.equal(missingDescription.nextCalled, false);
+  assert.equal(missingDescription.res.statusCode, 400);
+  assert.match(missingDescription.res.body.message, /requestDescription/);
+});
+
+test("create ride validation accepts delivery with destination and description", async (t) => {
+  const originalListActiveServiceTypes =
+    ServiceTypeService.listActiveServiceTypes;
+
+  ServiceTypeService.listActiveServiceTypes = async () => [
+    { code: "package_delivery", category: "delivery" },
+  ];
+  t.after(() => {
+    ServiceTypeService.listActiveServiceTypes = originalListActiveServiceTypes;
+  });
+
+  const result = await runCreateRideMiddleware(
+    buildValidRideBody({
+      serviceType: "package_delivery",
+      pickupAddress: "Sender",
+      dropoffAddress: "Recipient",
+      pickupLocation: { lat: 4.711, lng: -74.0721 },
+      dropoffLocation: { lat: 4.72, lng: -74.08 },
+      requestDescription: " Small box with documents ",
+    })
+  );
+
+  assert.equal(result.nextCalled, true);
+  assert.equal(result.req.body.hasDestination, true);
+  assert.equal(result.req.body.requestDescription, "Small box with documents");
 });

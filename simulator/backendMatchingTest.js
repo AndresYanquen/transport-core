@@ -3,9 +3,10 @@ const { createLogger } = require("./utils/logger");
 const ApiClient = require("./core/ApiClient");
 const AuthClient = require("./core/AuthClient");
 const { ensureSimulationUsers } = require("./setup/ensureSimulationUsers");
+const { TUNJA_CENTER } = require("./gps/tunja");
 
-const PICKUP = { lat: 6.12345, lng: -74.12345 };
-const DROPOFF = { lat: 6.12945, lng: -74.11745 };
+const PICKUP = { ...TUNJA_CENTER };
+const DROPOFF = { lat: 5.541, lng: -73.361 };
 
 const DRIVER_FIXTURES = [
   {
@@ -36,7 +37,7 @@ const DRIVER_FIXTURES = [
     n: 5,
     label: "too_far",
     status: "online",
-    location: { lat: PICKUP.lat + 0.2, lng: PICKUP.lng + 0.2 },
+    location: { lat: 5.559, lng: -73.344 },
   },
 ];
 

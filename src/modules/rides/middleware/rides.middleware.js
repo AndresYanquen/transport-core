@@ -38,6 +38,7 @@ async function validateCreateRide(req, res, next) {
     dropoffAddress,
     pickupLocation,
     dropoffLocation,
+    requestDescription,
     hasDestination,
     serviceType = DEFAULT_SERVICE_TYPE,
     estimatedDistanceMeters,
@@ -99,15 +100,50 @@ async function validateCreateRide(req, res, next) {
 
   let activeServiceTypes;
   try {
-    activeServiceTypes = await ServiceTypeService.listActiveServiceTypeCodes();
+    activeServiceTypes = await ServiceTypeService.listActiveServiceTypes();
   } catch (error) {
     return next(error);
   }
 
-  if (!activeServiceTypes.includes(serviceType)) {
+  const activeServiceType = activeServiceTypes.find(
+    (activeType) => activeType.code === serviceType
+  );
+
+  if (!activeServiceType) {
     return res.status(400).json({
-      message: `serviceType must be one of the active service types: ${activeServiceTypes.join(", ")}`,
+      message: `serviceType must be one of the active service types: ${activeServiceTypes
+        .map((activeType) => activeType.code)
+        .join(", ")}`,
     });
+  }
+
+  const isDeliveryService = activeServiceType.category === "delivery";
+  if (isDeliveryService && !resolvedHasDestination) {
+    return res.status(400).json({
+      message:
+        "Delivery service types require dropoffLocation and dropoffAddress.",
+    });
+  }
+
+  if (isDeliveryService) {
+    if (
+      typeof requestDescription !== "string" ||
+      !requestDescription.trim()
+    ) {
+      return res.status(400).json({
+        message: "requestDescription is required for delivery service types.",
+      });
+    }
+
+    req.body.requestDescription = requestDescription.trim();
+  } else if (requestDescription !== undefined && requestDescription !== null) {
+    if (typeof requestDescription !== "string") {
+      return res.status(400).json({
+        message: "requestDescription must be a string when provided.",
+      });
+    }
+
+    req.body.requestDescription = requestDescription.trim() || null;
   }
 
   if (

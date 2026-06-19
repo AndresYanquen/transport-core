@@ -17,6 +17,7 @@ const {
 const { applyTransitionSideEffects } = require("./ride-effects.service");
 const {
   emitToRide,
+  emitToRole,
   emitToUser,
   removeUserFromRideRoom,
 } = require("../../../realtime/socket.server");
@@ -138,6 +139,23 @@ async function emitRideStatusUpdated({
   if (payloadRide.driverId) {
     safeRealtimeEmit(() => emitToUser(payloadRide.driverId, "ride:status-updated", payload));
   }
+
+  const operationsPayload = {
+    rideId: payloadRide.id,
+    previousStatus,
+    ride: {
+      id: payloadRide.id,
+      status: payloadRide.status,
+      serviceType: payloadRide.serviceType,
+      pickupAddress: payloadRide.pickupAddress,
+      pickupLocation: payloadRide.pickupLocation,
+      requestedAt: payloadRide.requestedAt,
+      updatedAt: payloadRide.updatedAt,
+    },
+    emittedAt: payload.emittedAt,
+  };
+  safeRealtimeEmit(() => emitToRole("admin", "operations:ride-updated", operationsPayload));
+  safeRealtimeEmit(() => emitToRole("operator", "operations:ride-updated", operationsPayload));
 }
 
 function emitDriverInvitesCreated({
@@ -705,6 +723,7 @@ async function createRide({
   dropoffAddress,
   pickupLocation,
   dropoffLocation,
+  requestDescription,
   hasDestination,
   estimatedDistanceMeters,
   estimatedDurationSeconds,
@@ -743,6 +762,8 @@ async function createRide({
   );
   const normalizedDropoffAddress =
     typeof dropoffAddress === "string" ? dropoffAddress.trim() : "";
+  const normalizedRequestDescription =
+    typeof requestDescription === "string" ? requestDescription.trim() : null;
   const resolvedHasDestination =
     typeof hasDestination === "boolean"
       ? hasDestination
@@ -776,6 +797,7 @@ async function createRide({
       dropoffAddress: resolvedHasDestination ? normalizedDropoffAddress : null,
       pickupLocation: normalizedPickupLocation,
       dropoffLocation: resolvedHasDestination ? normalizedDropoffLocation : null,
+      requestDescription: normalizedRequestDescription,
       hasDestination: resolvedHasDestination,
       estimatedDistanceMeters,
       estimatedDurationSeconds,

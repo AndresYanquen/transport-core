@@ -13,6 +13,12 @@ const savedDestinationRoutes = require("./modules/saved-destinations/routes/save
 const preferredDriverRoutes = require("./modules/preferred-drivers/routes/preferred-driver.routes");
 const serviceTypeRoutes = require("./modules/service-types/routes/service-type.routes");
 const adminSimulationRoutes = require("./modules/admin-simulation/routes/admin-simulation.routes");
+const adminNavigationRoutes = require("./modules/admin-navigation/routes/admin-navigation.routes");
+const adminOperationalParametersRoutes = require("./modules/admin-operational-parameters/routes/admin-operational-parameters.routes");
+const adminUsersRoutes = require("./modules/admin-users/routes/admin-users.routes");
+const adminZonesRoutes = require("./modules/admin-zones/routes/admin-zones.routes");
+const adminDriversMapRoutes = require("./modules/admin-drivers-map/routes/admin-drivers-map.routes");
+const adminHotZonesRoutes = require("./modules/admin-hot-zones/routes/admin-hot-zones.routes");
 const { authenticate } = require("./modules/auth/middleware/authentication.middleware");
 
 const app = express();
@@ -28,6 +34,12 @@ app.use("/api/preferences", authenticate, preferencesRoutes);
 app.use("/api/saved-destinations", authenticate, savedDestinationRoutes);
 app.use("/api/preferred-drivers", authenticate, preferredDriverRoutes);
 app.use("/api/service-types", authenticate, serviceTypeRoutes);
+app.use("/api/admin/navigation", authenticate, adminNavigationRoutes);
+app.use("/api/admin/operational-parameters", authenticate, adminOperationalParametersRoutes);
+app.use("/api/admin/users", authenticate, adminUsersRoutes);
+app.use("/api/admin/zones", authenticate, adminZonesRoutes);
+app.use("/api/admin/drivers-map", authenticate, adminDriversMapRoutes);
+app.use("/api/admin/hot-zones", authenticate, adminHotZonesRoutes);
 //app.use("/places", authenticate, placesRoutes); -- no calls
 // Public in non-production for debugging. In production, require auth + admin role.
 if (String(env.nodeEnv || "").toLowerCase() === "production") {

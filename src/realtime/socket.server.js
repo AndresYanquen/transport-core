@@ -212,6 +212,14 @@ function emitToUser(userId, eventName, payload) {
   ioInstance.to(userRoom(userId)).emit(eventName, payload);
 }
 
+function emitToRole(role, eventName, payload) {
+  if (!ioInstance || !role || !eventName) {
+    return;
+  }
+
+  ioInstance.to(roleRoom(role)).emit(eventName, payload);
+}
+
 function removeUserFromRideRoom(userId, rideId) {
   if (!ioInstance || !userId || !rideId) {
     return;
@@ -225,6 +233,7 @@ module.exports = {
   getSocketServer,
   emitToRide,
   emitToUser,
+  emitToRole,
   removeUserFromRideRoom,
   userRoom,
   roleRoom,

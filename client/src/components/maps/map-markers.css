@@ -1,0 +1,45 @@
+.hot-request-marker {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 3px solid #fff;
+  border-radius: 999px;
+  background: var(--request-color);
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.35);
+}
+
+.hot-request-marker > span {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #fff;
+}
+
+.hot-driver-marker {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: #047857;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.9), 0 6px 16px rgba(15, 23, 42, 0.45);
+}
+
+.hot-driver-marker > span {
+  width: 0;
+  height: 0;
+  border-right: 5px solid transparent;
+  border-bottom: 12px solid #fff;
+  border-left: 5px solid transparent;
+  transform-origin: 50% 65%;
+}
+
+.hot-driver-marker--highlighted {
+  outline: 4px solid rgba(16, 185, 129, 0.42);
+}
+
+.hot-driver-marker--muted {
+  filter: grayscale(0.8);
+}

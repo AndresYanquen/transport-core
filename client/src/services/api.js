@@ -1,5 +1,11 @@
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
 
+let authToken = "";
+
+export function setAuthToken(token) {
+  authToken = token || "";
+}
+
 export function buildApiUrl(path) {
   if (!path) return apiBaseUrl;
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
@@ -13,6 +19,10 @@ export async function apiRequest(path, options = {}) {
     Accept: "application/json",
     ...headers,
   };
+
+  if (authToken && !resolvedHeaders.Authorization) {
+    resolvedHeaders.Authorization = `Bearer ${authToken}`;
+  }
 
   const init = {
     headers: resolvedHeaders,

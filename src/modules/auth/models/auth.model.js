@@ -120,8 +120,9 @@ class AuthModel {
     try {
       await client.query("BEGIN");
 
-      const resolvedRole =
-        accountType === "driver" ? "driver" : accountType === "client" ? "client" : role;
+      const resolvedRole = ["admin", "operator", "driver", "client"].includes(accountType)
+        ? accountType
+        : role;
       const profile = {};
       if (accountType === "client" && clientProfile) {
         const preferences = {

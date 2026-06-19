@@ -1,5 +1,7 @@
 const bcrypt = require("bcryptjs");
 
+const { tunjaLocationForIndex } = require("../simulator/gps/tunja");
+
 const DEFAULT_PASSWORD = process.env.SIM_USER_PASSWORD || "123456";
 const PASSWORD_SALT_ROUNDS = 12;
 
@@ -17,13 +19,6 @@ function customerEmail(n) {
 }
 
 function demoDriverState(n) {
-  const clusters = [
-    { lat: 40.7128, lng: -74.0060 },
-    { lat: 4.711, lng: -74.0721 },
-    { lat: 5.535, lng: -73.367 },
-    { lat: 6.12345, lng: -74.12345 },
-  ];
-
   if (n > 24) {
     return {
       status: "offline",
@@ -31,15 +26,9 @@ function demoDriverState(n) {
     };
   }
 
-  const cluster = clusters[(n - 1) % clusters.length];
-  const offset = Math.floor((n - 1) / clusters.length) * 0.0001;
-
   return {
     status: "online",
-    location: {
-      lat: cluster.lat + offset,
-      lng: cluster.lng + offset,
-    },
+    location: tunjaLocationForIndex(n),
   };
 }
 

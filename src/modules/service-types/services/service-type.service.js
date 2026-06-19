@@ -39,6 +39,10 @@ async function listActiveServiceTypeCodes() {
   return ServiceTypeModel.listActiveCodes();
 }
 
+async function listActiveServiceTypes() {
+  return ServiceTypeModel.list({ includeInactive: false });
+}
+
 async function createServiceType(payload) {
   try {
     const serviceType = await ServiceTypeModel.create(payload);
@@ -72,6 +76,7 @@ module.exports = {
   listServiceTypes,
   getServiceType,
   listActiveServiceTypeCodes,
+  listActiveServiceTypes,
   createServiceType,
   updateServiceType,
   deleteServiceType,

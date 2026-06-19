@@ -1,6 +1,6 @@
 const DriverModel = require("../models/driver.model");
 const RideModel = require("../../rides/models/ride.model");
-const { emitToRide, emitToUser } = require("../../../realtime/socket.server");
+const { emitToRide, emitToRole, emitToUser } = require("../../../realtime/socket.server");
 
 function createHttpError(status, message) {
   const error = new Error(message);
@@ -20,6 +20,9 @@ async function emitDriverLocationUpdated(driver) {
   if (!driver?.userId) {
     return;
   }
+
+  const adminPayload = buildDriverRealtimePayload(driver);
+  safeRealtimeEmit(() => emitToRole("admin", "admin:driver-location-updated", adminPayload));
 
   const rideRows = await RideModel.listActiveRidesByDriverId(driver.userId);
   if (!rideRows.length) {
@@ -57,6 +60,30 @@ async function emitDriverLocationUpdated(driver) {
       })
     );
   }
+}
+
+function buildDriverRealtimePayload(driver) {
+  return {
+    driver: {
+      userId: driver.userId,
+      status: driver.status,
+      updatedAt: driver.updatedAt || new Date().toISOString(),
+      currentLocation: driver.currentLocation ?? null,
+      headingDegrees: driver.headingDegrees ?? null,
+      speedKmh: driver.speedKmh ?? null,
+      vehicle: {
+        make: driver.vehicleMake,
+        model: driver.vehicleModel,
+        year: driver.vehicleYear,
+        color: driver.vehicleColor,
+        plate: driver.vehiclePlate,
+        type: driver.vehicleType,
+      },
+      serviceTypes: driver.serviceTypes || [],
+      contact: driver.contact || {},
+    },
+    emittedAt: new Date().toISOString(),
+  };
 }
 
 async function matchPendingRidesForDriverBestEffort(driver) {
@@ -118,6 +145,10 @@ async function updateStatus(driverId, status) {
     await matchPendingRidesForDriverBestEffort(driver);
   }
 
+  safeRealtimeEmit(() =>
+    emitToRole("admin", "admin:driver-status-updated", buildDriverRealtimePayload(driver))
+  );
+
   return driver;
 }
 
@@ -134,6 +165,10 @@ async function setDriverStatus(driverId, status, dbClient) {
   if (!driver) {
     throw createHttpError(500, "Failed to update driver status.");
   }
+
+  safeRealtimeEmit(() =>
+    emitToRole("admin", "admin:driver-status-updated", buildDriverRealtimePayload(driver))
+  );
 
   return driver;
 }

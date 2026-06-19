@@ -10,6 +10,7 @@ const BASE_RIDE_FIELDS = `
   service_type,
   pickup_address,
   dropoff_address,
+  request_description,
   has_destination,
   ST_AsGeoJSON(pickup_point)::jsonb AS pickup_point_geojson,
   ST_AsGeoJSON(dropoff_point)::jsonb AS dropoff_point_geojson,
@@ -89,6 +90,7 @@ class RideModel {
     serviceType,
     pickupAddress,
     dropoffAddress,
+    requestDescription,
     hasDestination,
     pickupLocation,
     dropoffLocation,
@@ -140,6 +142,7 @@ class RideModel {
           service_type,
           pickup_address,
           dropoff_address,
+          request_description,
           has_destination,
           pickup_point,
           dropoff_point,
@@ -164,13 +167,13 @@ class RideModel {
           $5,
           $6,
           $7,
-          CASE WHEN $8::text IS NULL THEN NULL
-              ELSE ST_GeogFromText($8::text)
-          END,
+          $8,
           CASE WHEN $9::text IS NULL THEN NULL
               ELSE ST_GeogFromText($9::text)
           END,
-          $10,
+          CASE WHEN $10::text IS NULL THEN NULL
+              ELSE ST_GeogFromText($10::text)
+          END,
           $11,
           $12,
           $13,
@@ -179,9 +182,10 @@ class RideModel {
           $16,
           $17,
           $18,
-          COALESCE($19::jsonb, '{}'::jsonb),
-          $20,
-          $21
+          $19,
+          COALESCE($20::jsonb, '{}'::jsonb),
+          $21,
+          $22
         )
         RETURNING ${BASE_RIDE_FIELDS}
       `,
@@ -192,6 +196,7 @@ class RideModel {
         serviceType,
         pickupAddress ?? null,
         dropoffAddress ?? null,
+        requestDescription ?? null,
         Boolean(hasDestination),
         pickupWkt,
         dropoffWkt,
@@ -504,6 +509,7 @@ class RideModel {
       serviceType: row.service_type,
       pickupAddress: row.pickup_address,
       dropoffAddress: row.dropoff_address,
+      requestDescription: row.request_description,
       hasDestination:
         row.has_destination !== undefined && row.has_destination !== null
           ? Boolean(row.has_destination)

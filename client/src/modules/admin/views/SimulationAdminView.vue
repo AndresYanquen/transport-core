@@ -1,7 +1,12 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { useRouter } from "vue-router";
 import { apiRequest } from "../../../services/api.js";
+import { useAuthStore } from "../../../stores/auth.js";
 import DebugGeoMap from "../components/DebugGeoMap.vue";
+
+const router = useRouter();
+const auth = useAuthStore();
 
 const state = reactive({
   loading: true,
@@ -280,6 +285,16 @@ function clearTimeFilters() {
   filters.toTime = "";
   fetchState();
 }
+
+function userDisplayName(user) {
+  const name = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim();
+  return name || user?.email || "Admin";
+}
+
+async function logout() {
+  auth.logout();
+  await router.replace({ name: "admin-login" });
+}
 </script>
 
 <template>
@@ -292,7 +307,10 @@ function clearTimeFilters() {
         </span>
       </div>
 
-      <div class="flex items-center gap-2 text-xs text-slate-600">
+      <div class="flex flex-wrap items-center justify-end gap-2 text-xs text-slate-600">
+        <span v-if="auth.state.user" class="rounded border border-slate-200 bg-white px-2 py-1 text-slate-700">
+          {{ userDisplayName(auth.state.user) }}
+        </span>
         <span class="font-mono">poll={{ pollingMs }}ms</span>
         <span v-if="server" class="font-mono">realtime={{ server.realtimeEnabled ? "on" : "off" }}</span>
         <span v-if="state.lastUpdatedAt" class="font-mono">updated={{ new Date(state.lastUpdatedAt).toLocaleTimeString() }}</span>
@@ -301,6 +319,12 @@ function clearTimeFilters() {
           @click="fetchState"
         >
           Refresh
+        </button>
+        <button
+          class="rounded border border-slate-200 bg-white px-2 py-1 text-slate-700 hover:bg-slate-50"
+          @click="logout"
+        >
+          Logout
         </button>
       </div>
     </div>
