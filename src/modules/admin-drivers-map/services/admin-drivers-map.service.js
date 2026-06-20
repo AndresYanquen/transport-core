@@ -18,6 +18,9 @@ function mapDriver(row) {
   return {
     userId: row.user_id,
     status: row.status,
+    availabilityIntent: row.availability_intent,
+    lastSeenAt: toIso(row.last_seen_at),
+    offlineReason: row.offline_reason,
     updatedAt: toIso(row.updated_at),
     currentLocation: mapPointGeoJSON(row.current_location_geojson),
     headingDegrees: row.heading_degrees === null ? null : Number(row.heading_degrees),
@@ -47,6 +50,9 @@ async function getDriversMapSnapshot() {
       SELECT
         d.user_id,
         d.status,
+        d.availability_intent,
+        d.last_seen_at,
+        d.offline_reason,
         d.updated_at,
         d.heading_degrees,
         d.speed_kmh,

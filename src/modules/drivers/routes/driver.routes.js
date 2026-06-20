@@ -18,6 +18,19 @@ function ensureDriverOwnsResource(req, res, next) {
   next();
 }
 
+router.get(
+  "/hot-zones",
+  authorizeRoles("driver"),
+  DriverController.getHotZones
+);
+
+router.get(
+  "/hot-zones/:zoneId/requests",
+  authorizeRoles("driver"),
+  driverMiddleware.listHotZoneRequests,
+  DriverController.listHotZoneRequests
+);
+
 router.patch(
   "/:driverId/location",
   authorizeRoles("driver", "admin"),

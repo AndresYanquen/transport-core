@@ -67,6 +67,9 @@ async function getSimulationState({ limit = 200, from = null, to = null } = {}) 
     SELECT
       d.user_id,
       d.status,
+      d.availability_intent,
+      d.last_seen_at,
+      d.offline_reason,
       d.updated_at,
       ST_AsGeoJSON(d.current_location)::json AS current_location_geojson,
       u.email,
@@ -137,6 +140,9 @@ async function getSimulationState({ limit = 200, from = null, to = null } = {}) 
     return {
       userId: row.user_id,
       status,
+      availabilityIntent: row.availability_intent,
+      lastSeenAt: toIso(row.last_seen_at),
+      offlineReason: row.offline_reason,
       updatedAt: toIso(row.updated_at),
       currentLocation,
       currentRideId: row.current_ride_id || null,

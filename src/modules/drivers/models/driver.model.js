@@ -1,4 +1,5 @@
 const { pool, query } = require("../../../config/database");
+const { env } = require("../../../config");
 
 const BASE_DRIVER_FIELDS = `
   d.user_id,
@@ -28,6 +29,9 @@ const BASE_DRIVER_FIELDS = `
       AND r.status = 'completed'
   ) AS total_trips,
   d.status,
+  d.availability_intent,
+  d.last_seen_at,
+  d.offline_reason,
   d.documents,
   d.onboarded_at,
   d.created_at,
@@ -79,6 +83,9 @@ function mapDriverRow(row) {
     rating: Number(row.rating ?? 0),
     totalTrips: Number(row.total_trips ?? 0),
     status: row.status,
+    availabilityIntent: row.availability_intent,
+    lastSeenAt: row.last_seen_at,
+    offlineReason: row.offline_reason,
     documents: row.documents,
     onboardedAt: row.onboarded_at,
     createdAt: row.created_at,
@@ -99,22 +106,27 @@ function mapDriverRow(row) {
   };
 }
 
-async function updateLocation(driverId, { currentLocationWkt, heading, speedKmh }, dbClient) {
+async function updateLocation(driverId, { currentLocationWkt, heading, speedKmh, hasLocation }, dbClient) {
   const executor = getExecutor(dbClient);
   const { rows } = await executor.query(
     `
       UPDATE drivers d
       SET
-        current_location = ST_GeogFromText($1),
-        heading_degrees = COALESCE($2::double precision, heading_degrees),
-        speed_kmh = COALESCE($3::double precision, speed_kmh),
+        current_location = CASE WHEN $4::boolean THEN ST_GeogFromText($1) ELSE current_location END,
+        heading_degrees = CASE WHEN $4::boolean THEN COALESCE($2::double precision, heading_degrees) ELSE heading_degrees END,
+        speed_kmh = CASE WHEN $4::boolean THEN COALESCE($3::double precision, speed_kmh) ELSE speed_kmh END,
+        last_seen_at = NOW(),
+        offline_reason = CASE
+          WHEN d.status IN ('online', 'busy') THEN NULL
+          ELSE d.offline_reason
+        END,
         updated_at = NOW()
       FROM users u
-      WHERE d.user_id = $4
+      WHERE d.user_id = $5
         AND u.id = d.user_id
       RETURNING ${BASE_DRIVER_FIELDS}
     `,
-    [currentLocationWkt, heading ?? null, speedKmh ?? null, driverId]
+    [currentLocationWkt, heading ?? null, speedKmh ?? null, Boolean(hasLocation), driverId]
   );
 
   return mapDriverRow(rows[0]);
@@ -125,7 +137,16 @@ async function updateStatus(driverId, status, dbClient) {
   const { rows } = await executor.query(
     `
       UPDATE drivers d
-      SET status = $1,
+      SET status = CASE
+            WHEN d.status = 'busy' AND $1 <> 'busy' THEN 'busy'
+            ELSE $1
+          END,
+          availability_intent = CASE
+            WHEN $1 = 'busy' THEN d.availability_intent
+            ELSE $1
+          END,
+          last_seen_at = CASE WHEN $1 IN ('online', 'busy') THEN NOW() ELSE last_seen_at END,
+          offline_reason = CASE WHEN $1 = 'offline' THEN 'driver_request' ELSE NULL END,
           updated_at = NOW()
       FROM users u
       WHERE d.user_id = $2
@@ -166,7 +187,7 @@ async function findAvailableDriversNear(pointWkt, {
   }
 
   const executor = getExecutor(dbClient);
-  const params = [pointWkt, radiusMeters];
+  const params = [pointWkt, env.driverPresence.staleAfterSeconds, radiusMeters];
   let excludeClause = "";
   let serviceTypeClause = "";
 
@@ -204,8 +225,9 @@ async function findAvailableDriversNear(pointWkt, {
       FROM drivers d
       JOIN users u ON u.id = d.user_id
       WHERE d.status = 'online'
+        AND d.last_seen_at >= NOW() - ($2::double precision * INTERVAL '1 second')
         AND d.current_location IS NOT NULL
-        AND ST_DWithin(d.current_location, ST_GeogFromText($1), $2)
+        AND ST_DWithin(d.current_location, ST_GeogFromText($1), $3)
         ${excludeClause}
         ${serviceTypeClause}
       ORDER BY distance_meters ASC
@@ -215,6 +237,54 @@ async function findAvailableDriversNear(pointWkt, {
   );
 
   return rows.map(mapDriverRow);
+}
+
+async function restoreAvailability(driverId, dbClient) {
+  const executor = getExecutor(dbClient);
+  const { rows } = await executor.query(
+    `
+      UPDATE drivers d
+      SET
+        status = CASE
+          WHEN availability_intent = 'online'
+            AND last_seen_at >= NOW() - ($2::double precision * INTERVAL '1 second')
+            THEN 'online'
+          WHEN availability_intent = 'unavailable' THEN 'unavailable'
+          ELSE 'offline'
+        END,
+        offline_reason = CASE
+          WHEN availability_intent = 'online'
+            AND last_seen_at < NOW() - ($2::double precision * INTERVAL '1 second')
+            THEN 'heartbeat_timeout'
+          WHEN availability_intent = 'offline' THEN COALESCE(offline_reason, 'driver_request')
+          ELSE NULL
+        END,
+        updated_at = NOW()
+      FROM users u
+      WHERE d.user_id = $1
+        AND u.id = d.user_id
+      RETURNING ${BASE_DRIVER_FIELDS}
+    `,
+    [driverId, env.driverPresence.staleAfterSeconds]
+  );
+  return mapDriverRow(rows[0]);
+}
+
+async function expireStaleOnlineDrivers() {
+  const { rows } = await query(
+    `
+      UPDATE drivers
+      SET status = 'offline',
+          offline_reason = 'heartbeat_timeout',
+          updated_at = NOW()
+      WHERE status = 'online'
+        AND (last_seen_at IS NULL
+          OR last_seen_at < NOW() - ($1::double precision * INTERVAL '1 second'))
+      RETURNING user_id
+    `,
+    [env.driverPresence.staleAfterSeconds]
+  );
+  return rows.map((row) => row.user_id);
 }
 
 async function listServiceTypes(driverId, dbClient) {
@@ -227,6 +297,7 @@ async function listServiceTypes(driverId, dbClient) {
         st.name,
         st.description,
         st.icon,
+        st.color,
         st.base_price,
         st.is_active,
         st.sort_order,
@@ -247,6 +318,7 @@ async function listServiceTypes(driverId, dbClient) {
     name: row.name,
     description: row.description,
     icon: row.icon,
+    color: row.color,
     basePrice: Number(row.base_price ?? 0),
     isActive: row.is_active,
     sortOrder: row.sort_order,
@@ -306,6 +378,8 @@ module.exports = {
   updateStatus,
   getDriverById,
   findAvailableDriversNear,
+  restoreAvailability,
+  expireStaleOnlineDrivers,
   listServiceTypes,
   replaceServiceTypes,
 };

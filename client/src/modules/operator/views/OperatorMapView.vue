@@ -13,6 +13,7 @@ import {
 import { apiRequest } from "../../../services/api.js";
 import { createRealtimeSocket } from "../../../services/realtime.js";
 import { useAuthStore } from "../../../stores/auth.js";
+import { driverPresenceLabel, isDriverStale } from "../../../lib/driverPresence.js";
 
 const auth = useAuthStore();
 const mapEl = ref(null);
@@ -23,6 +24,7 @@ const state = reactive({
   drivers: [],
   zones: [],
   selectedRequestId: null,
+  selectedDriverId: null,
   socketConnected: false,
   lastUpdatedAt: null,
 });
@@ -57,6 +59,19 @@ const availableDrivers = computed(() => state.drivers);
 const selectedRequest = computed(() =>
   state.requests.find((request) => request.id === state.selectedRequestId) || null,
 );
+const selectedDriver = computed(() =>
+  state.drivers.find((driver) => driver.userId === state.selectedDriverId) || null,
+);
+
+function formatLastSeen(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "-" : date.toLocaleString();
+}
+
+function isAssignable(driver) {
+  return driver?.status === "online" && (!driver.lastSeenAt || !isDriverStale(driver));
+}
 
 function initMap() {
   if (map || !mapEl.value) return;
@@ -135,7 +150,11 @@ function renderMap({ fit = false } = {}) {
         icon: createDriverMarkerIcon(driver),
         zIndexOffset: 1000,
       })
-        .bindTooltip(`<strong>${escapeMapHtml(driver.name)}</strong><br>${escapeMapHtml(driver.vehicle?.plate || "Sin placa")}`)
+        .bindTooltip(`<strong>${escapeMapHtml(driver.name)}</strong><br>${escapeMapHtml(driver.vehicle?.plate || "Sin placa")}<br>Última conexión: ${escapeMapHtml(formatLastSeen(driver.lastSeenAt))}`)
+        .on("click", () => {
+          state.selectedDriverId = driver.userId;
+          state.selectedRequestId = null;
+        })
         .addTo(driverLayer);
       driverMarkers.set(driver.userId, marker);
       bounds.push(position);
@@ -159,7 +178,11 @@ async function fetchSnapshot({ fit = false, quiet = false } = {}) {
     });
     const result = await apiRequest(`/api/admin/hot-zones?${params}`, { method: "GET" });
     state.requests = result?.requests || [];
-    state.drivers = result?.drivers || [];
+    state.drivers = (result?.drivers || []).map((driver) => ({
+      ...driver,
+      status: driver.status || "online",
+      availabilityIntent: driver.availabilityIntent || "online",
+    }));
     state.zones = result?.zones || [];
     state.lastUpdatedAt = result?.server?.now || new Date().toISOString();
     renderMap({ fit });
@@ -172,12 +195,16 @@ async function fetchSnapshot({ fit = false, quiet = false } = {}) {
 
 function focusRequest(request) {
   state.selectedRequestId = request.id;
+  state.selectedDriverId = null;
   if (!request.pickupLocation) return;
   map?.setView([request.pickupLocation.lat, request.pickupLocation.lng], 17, { animate: true });
   requestMarkers.get(request.id)?.openTooltip();
 }
 
 function focusDriver(driver) {
+  if (!isAssignable(driver)) return;
+  state.selectedDriverId = driver.userId;
+  state.selectedRequestId = null;
   if (!driver.location) return;
   map?.setView([driver.location.lat, driver.location.lng], 17, { animate: true });
   driverMarkers.get(driver.userId)?.openTooltip();
@@ -310,6 +337,8 @@ onBeforeUnmount(() => {
               v-for="driver in availableDrivers"
               :key="driver.userId"
               class="flex w-full items-center justify-between gap-3 border-b border-slate-100 p-3 text-left hover:bg-emerald-50"
+              :disabled="!isAssignable(driver)"
+              :class="!isAssignable(driver) ? 'cursor-not-allowed opacity-50' : ''"
               type="button"
               @click="focusDriver(driver)"
             >
@@ -318,6 +347,7 @@ onBeforeUnmount(() => {
                 <span class="block truncate text-xs text-slate-500">
                   {{ driver.vehicle?.plate || "Sin placa" }} · {{ driver.zoneName || "Sin zona" }}
                 </span>
+                <span class="block text-xs text-slate-400">Última conexión: {{ formatLastSeen(driver.lastSeenAt) }}</span>
               </span>
               <span class="h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500" />
             </button>
@@ -356,6 +386,16 @@ onBeforeUnmount(() => {
           <h2 class="mt-1 font-semibold">#{{ shortMapId(selectedRequest.id) }}</h2>
           <p class="mt-2 text-sm">{{ selectedRequest.pickupAddress }}</p>
           <p class="mt-1 text-xs text-slate-500">{{ selectedRequest.clientName }} · {{ statusLabel(selectedRequest.status) }}</p>
+        </div>
+        <div v-else-if="selectedDriver" class="absolute bottom-4 left-4 z-[500] max-w-sm rounded-lg border border-white/70 bg-white/95 p-4 shadow-xl">
+          <p class="text-xs font-medium uppercase text-emerald-700">Conductor seleccionado</p>
+          <h2 class="mt-1 font-semibold">{{ selectedDriver.name }}</h2>
+          <p class="mt-2 text-sm">{{ selectedDriver.vehicle?.plate || "Sin placa" }} · {{ selectedDriver.zoneName || "Sin zona" }}</p>
+          <p class="mt-1 text-xs text-slate-500">{{ driverPresenceLabel(selectedDriver) }}</p>
+          <p class="mt-1 text-xs text-slate-500">Última conexión: {{ formatLastSeen(selectedDriver.lastSeenAt) }}</p>
+          <p v-if="selectedDriver.status === 'busy' && isDriverStale(selectedDriver)" class="mt-2 rounded bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700">
+            Conexión perdida. El servicio permanece asignado.
+          </p>
         </div>
         <div v-if="state.error" class="absolute bottom-4 right-4 z-[600] rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{{ state.error }}</div>
         <div v-if="state.loading" class="absolute inset-0 z-[700] grid place-items-center bg-white/60 text-sm font-medium backdrop-blur-sm">Cargando operación...</div>

@@ -122,6 +122,12 @@ router.patch(
   RideMiddleware.driverResponse,
   RideController.respondDriverAssignment
 );
+router.post(
+  "/:rideId/claim",
+  authorizeRoles("driver"),
+  ensureValidRideId,
+  RideController.claimRide
+);
 router.patch(
   "/:rideId/driver-progress",
   authorizeRoles("driver", "admin"),

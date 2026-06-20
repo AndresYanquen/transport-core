@@ -31,17 +31,16 @@ function toWktPoint(location) {
 function updateLocation(req, res, next) {
   const { currentLocation, heading, speedKmh } = req.body || {};
 
-  if (!currentLocation) {
+  const wkt = currentLocation ? toWktPoint(currentLocation) : null;
+  if (currentLocation && !wkt) {
     return res.status(400).json({
-      message: "currentLocation is required and must contain lat/lng.",
+      message: "currentLocation must contain valid lat/lng coordinates.",
     });
   }
 
-  const wkt = toWktPoint(currentLocation);
-
-  if (!wkt) {
+  if (!currentLocation && (heading !== undefined || speedKmh !== undefined)) {
     return res.status(400).json({
-      message: "currentLocation must contain valid lat/lng coordinates.",
+      message: "heading and speedKmh require currentLocation.",
     });
   }
 
@@ -64,6 +63,7 @@ function updateLocation(req, res, next) {
   }
 
   req.body.currentLocationWkt = wkt;
+  req.body.hasLocation = Boolean(currentLocation);
   next();
 }
 
@@ -112,8 +112,31 @@ function replaceServiceTypes(req, res, next) {
   next();
 }
 
+function listHotZoneRequests(req, res, next) {
+  const zoneId = String(req.params.zoneId || "");
+  const uuidRegex =
+    /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
+  if (!uuidRegex.test(zoneId)) {
+    return res.status(400).json({ message: "zoneId must be a valid UUID." });
+  }
+
+  const page = req.query.page === undefined ? 1 : Number(req.query.page);
+  const limit = req.query.limit === undefined ? 20 : Number(req.query.limit);
+  if (!Number.isInteger(page) || page < 1) {
+    return res.status(400).json({ message: "page must be a positive integer." });
+  }
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+    return res.status(400).json({ message: "limit must be an integer between 1 and 50." });
+  }
+
+  req.query.page = page;
+  req.query.limit = limit;
+  next();
+}
+
 module.exports = {
   updateLocation,
   updateStatus,
   replaceServiceTypes,
+  listHotZoneRequests,
 };

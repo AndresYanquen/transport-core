@@ -110,6 +110,10 @@ const env = {
     enabled: parseBoolean(process.env.SOCKET_ENABLED, true),
     path: process.env.SOCKET_PATH || "/socket.io",
   },
+  driverPresence: {
+    staleAfterSeconds: parseNumber(process.env.DRIVER_PRESENCE_STALE_SECONDS, 90),
+    sweepIntervalSeconds: parseNumber(process.env.DRIVER_PRESENCE_SWEEP_SECONDS, 30),
+  },
   google: {
     mapsApiKey: process.env.GOOGLE_MAPS_API_KEY || "",
   },

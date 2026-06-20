@@ -135,6 +135,18 @@ async function respondDriverAssignment(req, res, next) {
   }
 }
 
+async function claimRide(req, res, next) {
+  try {
+    const result = await RideService.claimRide({
+      rideId: req.params.rideId,
+      driverId: req.user.id,
+    });
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function driverProgress(req, res, next) {
   try {
     const {
@@ -244,6 +256,7 @@ module.exports = {
   updateRideStatus,
   getRide,
   assignDriver,
+  claimRide,
   respondDriverAssignment,
   driverProgress,
   cancelRide,

@@ -23,7 +23,7 @@ async function applyPendingDriverEffects(dbClient, {
   previousDriverId,
 }) {
   if (previousDriverId) {
-    await DriverService.setDriverStatus(previousDriverId, "online", dbClient);
+    await DriverService.restoreDriverAvailability(previousDriverId, dbClient);
   }
 
   await RideModel.expireAllPendingInvites(dbClient, rideId);
@@ -34,7 +34,7 @@ async function applyTerminalRideEffects(dbClient, {
   driverId,
 }) {
   if (driverId) {
-    await DriverService.setDriverStatus(driverId, "online", dbClient);
+    await DriverService.restoreDriverAvailability(driverId, dbClient);
   }
 
   await RideModel.expireAllPendingInvites(dbClient, rideId);

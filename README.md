@@ -78,6 +78,7 @@ Responsibility: ride lifecycle, assignment, driver invitations, state transition
 | `GET` | `/api/rides/:rideId` | `client`, `driver`, `admin` | Fetches ride details and event history if the caller can view the ride. |
 | `PATCH` | `/api/rides/:rideId/assign` | `admin` | Assigns a selected driver or invites nearby available drivers. |
 | `PATCH` | `/api/rides/:rideId/driver-response` | `driver` | Lets an invited driver accept or reject a pending ride invite. |
+| `POST` | `/api/rides/:rideId/claim` | `driver` | Atomically claims an available Hot Zones request. The driver must be online, recently present, free of another active ride, and enabled for the service type. On success it returns the assigned ride with exact passenger and pickup details. |
 | `PATCH` | `/api/rides/:rideId/driver-progress` | `driver`, `admin` | Advances driver-owned ride progress states such as en route, arrived, in progress, completed, or driver cancel. |
 | `PATCH` | `/api/rides/:rideId/status` | `client`, `driver`, `admin` | Generic state transition endpoint with actor validation. |
 | `PATCH` | `/api/rides/:rideId/cancel` | `client`, `driver`, `admin` | Cancels a ride according to caller role and allowed state transitions. |
@@ -92,8 +93,18 @@ Responsibility: driver availability, live driver position updates, and driver-si
 
 | Method | Endpoint | Roles | Responsibility |
 | --- | --- | --- | --- |
-| `PATCH` | `/api/drivers/:driverId/location` | `driver`, `admin` | Updates current location, heading, and speed; drivers can only update themselves. |
+| `PATCH` | `/api/drivers/:driverId/location` | `driver`, `admin` | Records driver presence and optionally updates location, heading, and speed; drivers can only update themselves. An empty body is a heartbeat. |
 | `PATCH` | `/api/drivers/:driverId/status` | `driver`, `admin` | Updates driver availability status; drivers can only update themselves. |
+| `GET` | `/api/drivers/hot-zones` | `driver` | Returns sanitized demand-zone polygons and request metrics for the Flutter driver heat map. It never returns client identities, pickup addresses, exact requests, driver availability counts, or other driver records. |
+| `GET` | `/api/drivers/hot-zones/:zoneId/requests` | `driver` | Returns paginated available requests with service type, request age, distance from the driver, and a server-generated approximate pickup circle. It excludes client identity, pickup address, and exact pickup coordinates. |
+
+The driver heat-map summary accepts `serviceType=all|<enabled-code>`. Each zone
+contains `availableRequestsByService` and a total in
+`metrics.availableRequests`. Zone request details accept `serviceType`, `page`
+(default `1`), and `limit` (default `20`, maximum `50`).
+Each request detail includes `approximatePickup.lat`, `approximatePickup.lng`,
+and `approximatePickup.radiusMeters`. The center is snapped to a stable
+250-meter server-side grid and is not the exact pickup coordinate.
 
 ### Places Module
 

@@ -1,4 +1,5 @@
 const { query } = require("../../../config/database");
+const { env } = require("../../../config");
 
 const VALID_RIDE_STATUSES = new Set([
   "all", "requested", "pending_driver", "driver_assigned", "driver_en_route",
@@ -71,7 +72,10 @@ async function getSnapshot(filters = {}) {
         ) r ON true
         LEFT JOIN LATERAL (
           SELECT
-            COUNT(*) FILTER (WHERE drivers.status = 'online') AS available_drivers,
+            COUNT(*) FILTER (
+              WHERE drivers.status = 'online'
+                AND drivers.last_seen_at >= NOW() - ($6::double precision * INTERVAL '1 second')
+            ) AS available_drivers,
             COUNT(*) FILTER (WHERE drivers.status IN ('online', 'busy')) AS total_drivers
           FROM drivers
           WHERE drivers.current_location IS NOT NULL
@@ -80,7 +84,7 @@ async function getSnapshot(filters = {}) {
         WHERE z.status = 'active'
         ORDER BY z.name ASC
       `,
-      [from.toISOString(), to.toISOString(), status, serviceType, ACTIVE_STATUSES],
+      [from.toISOString(), to.toISOString(), status, serviceType, ACTIVE_STATUSES, env.driverPresence.staleAfterSeconds],
     ),
     query(
       `
@@ -113,7 +117,8 @@ async function getSnapshot(filters = {}) {
       `
         SELECT
           d.user_id, d.heading_degrees, d.vehicle_make, d.vehicle_model,
-          d.vehicle_color, d.vehicle_plate, d.updated_at,
+          d.vehicle_color, d.vehicle_plate, d.status, d.availability_intent,
+          d.last_seen_at, d.offline_reason, d.updated_at,
           ST_AsGeoJSON(d.current_location::geometry)::json AS location_geojson,
           u.first_name, u.last_name,
           z.id AS zone_id, z.name AS zone_name
@@ -128,10 +133,12 @@ async function getSnapshot(filters = {}) {
           LIMIT 1
         ) z ON true
         WHERE d.status = 'online'
+          AND d.last_seen_at >= NOW() - ($1::double precision * INTERVAL '1 second')
           AND d.current_location IS NOT NULL
         ORDER BY d.updated_at DESC
         LIMIT 3000
       `,
+      [env.driverPresence.staleAfterSeconds],
     ),
     query(
       `
@@ -197,6 +204,10 @@ async function getSnapshot(filters = {}) {
     drivers: driversResult.rows.map((row) => ({
       userId: row.user_id,
       name: abbreviatedName(row.first_name, row.last_name),
+      status: row.status,
+      availabilityIntent: row.availability_intent,
+      lastSeenAt: row.last_seen_at,
+      offlineReason: row.offline_reason,
       location: mapPoint(row.location_geojson),
       headingDegrees: row.heading_degrees === null ? 0 : Number(row.heading_degrees),
       zoneId: row.zone_id || null,

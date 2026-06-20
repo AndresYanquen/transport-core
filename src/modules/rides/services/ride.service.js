@@ -23,6 +23,7 @@ const {
 } = require("../../../realtime/socket.server");
 const RideRatingService = require("./ride-rating.service");
 const SettingsService = require("../../settings/services/settings.service");
+const { env } = require("../../../config");
 
 const pool = RideModel.getPool();
 const CLIENT_DRIVER_SEARCH_RADIUS_SETTING = "client_driver_search_radius_meters";
@@ -1242,6 +1243,128 @@ async function respondDriverAssignment({
   }
 }
 
+function assertDriverCanClaim({ driver, ride, activeRide }) {
+  if (driver.status !== "online") {
+    throw createHttpError(409, "Driver is not available to claim a ride.");
+  }
+  const lastSeenAt = driver.lastSeenAt ? new Date(driver.lastSeenAt).getTime() : NaN;
+  if (
+    !Number.isFinite(lastSeenAt) ||
+    Date.now() - lastSeenAt > env.driverPresence.staleAfterSeconds * 1000
+  ) {
+    throw createHttpError(409, "Driver presence is stale.");
+  }
+  if (activeRide) {
+    throw createHttpError(409, "Driver already has an active ride.");
+  }
+  if (!Array.isArray(driver.serviceTypes) || !driver.serviceTypes.includes(ride.serviceType)) {
+    throw createHttpError(403, "Driver does not support this ride service type.");
+  }
+}
+
+async function claimRide({ rideId, driverId }) {
+  if (!rideId || !driverId) {
+    throw createHttpError(400, "rideId and driverId are required.");
+  }
+
+  const dbClient = await pool.connect();
+  let committed = false;
+  try {
+    await dbClient.query("BEGIN");
+    let rideRow = await RideModel.getRideByIdForUpdate(rideId, dbClient);
+    if (!rideRow) throw createHttpError(404, "Ride not found.");
+
+    if (
+      ![RideStatus.REQUESTED, RideStatus.PENDING_DRIVER].includes(rideRow.status) ||
+      rideRow.driver_id
+    ) {
+      throw createHttpError(409, "Ride is no longer available.");
+    }
+
+    const driver = await DriverService.ensureDriverForUpdate(driverId, dbClient);
+    const activeRide = await RideModel.getActiveRideByDriverId(
+      dbClient,
+      driverId,
+      { forUpdate: true }
+    );
+    const isInActiveZone = await RideModel.isRideInActiveZone(dbClient, rideId);
+    const ride = RideModel.mapRideRow(rideRow);
+    assertDriverCanClaim({ driver, ride, activeRide });
+    if (!isInActiveZone) {
+      throw createHttpError(409, "Ride is not available through Hot Zones.");
+    }
+
+    let pendingTransition = null;
+    if (rideRow.status === RideStatus.REQUESTED) {
+      pendingTransition = await transitionRide(dbClient, {
+        rideId,
+        toStatus: RideStatus.PENDING_DRIVER,
+        actorType: RideActorType.SYSTEM,
+        actorId: driverId,
+        payload: { source: "driver_hot_zones_claim" },
+      });
+      rideRow = await RideModel.getRideByIdForUpdate(rideId, dbClient);
+    }
+
+    const existingInvite = await RideModel.getDriverInvite(dbClient, rideId, driverId, {
+      forUpdate: true,
+    });
+    if (!existingInvite) {
+      await RideModel.insertDriverInvites(dbClient, rideId, [driverId]);
+    } else if (existingInvite.status !== RideInviteStatus.PENDING) {
+      throw createHttpError(409, "Driver cannot claim this ride with the current invite status.");
+    }
+
+    const result = await transitionRide(dbClient, {
+      rideId,
+      toStatus: RideStatus.DRIVER_ASSIGNED,
+      actorType: RideActorType.DRIVER,
+      actorId: driverId,
+      driverId,
+      payload: { source: "driver_hot_zones_claim", response: "claimed" },
+    });
+
+    await dbClient.query("COMMIT");
+    committed = true;
+
+    if (pendingTransition?.statusChanged) {
+      await emitRideStatusUpdated({
+        ride: pendingTransition.ride,
+        event: pendingTransition.event,
+        previousStatus: pendingTransition.previousStatus,
+      });
+    }
+    await emitRideStatusUpdated({
+      ride: result.ride,
+      event: result.event,
+      previousStatus: result.previousStatus,
+      pendingInvites: [],
+    });
+    safeRealtimeEmit(() =>
+      emitToRole("driver", "driver:hot-zones-invalidated", {
+        reason: "ride_claimed",
+        rideId,
+        emittedAt: new Date().toISOString(),
+      })
+    );
+
+    const exactRide = await getRideById(rideId, {
+      includeDriver: true,
+      includePassenger: true,
+    }, { id: driverId, role: "driver" });
+    return {
+      claimed: true,
+      ride: exactRide.ride,
+      event: result.event,
+    };
+  } catch (error) {
+    if (!committed) await dbClient.query("ROLLBACK");
+    throw error;
+  } finally {
+    dbClient.release();
+  }
+}
+
 async function driverProgress({
   rideId,
   driverId,
@@ -1642,6 +1765,7 @@ async function getRideById(
 module.exports = {
   createRide,
   assignDriver,
+  claimRide,
   respondDriverAssignment,
   driverProgress,
   updateRideStatus,
@@ -1661,5 +1785,6 @@ module.exports = {
     validateTransitionPayload,
     normalizeActorType,
     canViewRide,
+    assertDriverCanClaim,
   },
 };

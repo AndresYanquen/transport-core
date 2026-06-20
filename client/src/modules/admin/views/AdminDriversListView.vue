@@ -1,7 +1,13 @@
 <script setup>
-import { computed, onMounted, reactive } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive } from "vue";
 import { Car, MapPin, RefreshCw, Search, UserCheck } from "lucide-vue-next";
+import { driverPresenceClass, driverPresenceKey, driverPresenceLabel, offlineReasonLabel } from "../../../lib/driverPresence.js";
 import { apiRequest } from "../../../services/api.js";
+import { createRealtimeSocket } from "../../../services/realtime.js";
+import { useAuthStore } from "../../../stores/auth.js";
+
+const auth = useAuthStore();
+let socket = null;
 
 const state = reactive({
   loading: true,
@@ -52,21 +58,23 @@ function driverName(driver) {
   return name || driver?.contact?.email || shortId(driver?.userId);
 }
 
-function statusLabel(status) {
-  const labels = {
-    online: "Online",
-    busy: "Ocupado",
-    unavailable: "No disponible",
-    offline: "Offline",
+function upsertDriver(nextDriver) {
+  if (!nextDriver?.userId) return;
+  const index = state.drivers.findIndex((driver) => driver.userId === nextDriver.userId);
+  if (index < 0) return;
+  state.drivers[index] = {
+    ...state.drivers[index],
+    ...nextDriver,
+    contact: { ...state.drivers[index].contact, ...nextDriver.contact },
   };
-  return labels[status] || status || "-";
+  state.lastUpdatedAt = new Date().toISOString();
 }
 
-function statusClass(status) {
-  if (status === "online") return "bg-emerald-50 text-emerald-700 border-emerald-200";
-  if (status === "busy") return "bg-amber-50 text-amber-700 border-amber-200";
-  if (status === "offline") return "bg-slate-100 text-slate-600 border-slate-200";
-  return "bg-rose-50 text-rose-700 border-rose-200";
+function connectRealtime() {
+  if (!auth.state.token || socket) return;
+  socket = createRealtimeSocket(auth.state.token);
+  socket.on("admin:driver-status-updated", (payload) => upsertDriver(payload?.driver));
+  socket.on("admin:driver-location-updated", (payload) => upsertDriver(payload?.driver));
 }
 
 const ridesByDriverId = computed(() => {
@@ -83,7 +91,7 @@ const filteredDrivers = computed(() => {
   const q = filters.search.trim().toLowerCase();
 
   return state.drivers.filter((driver) => {
-    if (filters.status !== "all" && driver.status !== filters.status) return false;
+    if (filters.status !== "all" && driverPresenceKey(driver) !== filters.status) return false;
     if (filters.simOnly && !driver.isSimUser) return false;
     if (!q) return true;
 
@@ -98,9 +106,9 @@ const filteredDrivers = computed(() => {
 
 const summary = computed(() => {
   const total = state.drivers.length;
-  const online = state.drivers.filter((driver) => driver.status === "online").length;
-  const busy = state.drivers.filter((driver) => driver.status === "busy" || driver.currentRideId).length;
-  const offline = state.drivers.filter((driver) => driver.status === "offline").length;
+  const online = state.drivers.filter((driver) => driverPresenceKey(driver) === "available").length;
+  const busy = state.drivers.filter((driver) => ["busy", "busy_unreachable"].includes(driverPresenceKey(driver))).length;
+  const offline = state.drivers.filter((driver) => ["driver_offline", "connection_lost"].includes(driverPresenceKey(driver))).length;
 
   return [
     { label: "Total", value: total },
@@ -110,7 +118,11 @@ const summary = computed(() => {
   ];
 });
 
-onMounted(fetchDrivers);
+onMounted(async () => {
+  await fetchDrivers();
+  connectRealtime();
+});
+onBeforeUnmount(() => socket?.disconnect());
 </script>
 
 <template>
@@ -175,10 +187,12 @@ onMounted(fetchDrivers);
             class="h-9 rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
           >
             <option value="all">Todos</option>
-            <option value="online">Online</option>
-            <option value="busy">Ocupados</option>
-            <option value="unavailable">No disponibles</option>
-            <option value="offline">Offline</option>
+            <option value="available">Disponibles</option>
+            <option value="busy">En servicio</option>
+            <option value="busy_unreachable">En servicio sin conexión</option>
+            <option value="unavailable">No aceptan servicios</option>
+            <option value="driver_offline">Desconectados</option>
+            <option value="connection_lost">Conexión perdida</option>
           </select>
           <label class="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm text-slate-700">
             <input v-model="filters.simOnly" class="h-4 w-4" type="checkbox" />
@@ -196,7 +210,7 @@ onMounted(fetchDrivers);
               <th class="py-2 pr-3">Servicio actual</th>
               <th class="py-2 pr-3">Servicios en ventana</th>
               <th class="py-2 pr-3">Ubicación</th>
-              <th class="py-2 pr-3">Última actualización</th>
+              <th class="py-2 pr-3">Última conexión</th>
               <th class="py-2 pr-3">Tipo</th>
             </tr>
           </thead>
@@ -208,9 +222,10 @@ onMounted(fetchDrivers);
                 <div class="text-xs text-slate-500">{{ driver.contact?.email || "-" }}</div>
               </td>
               <td class="py-3 pr-3">
-                <span :class="['inline-flex rounded-md border px-2 py-1 text-xs font-medium', statusClass(driver.status)]">
-                  {{ statusLabel(driver.status) }}
+                <span :class="['inline-flex rounded-md border px-2 py-1 text-xs font-medium', driverPresenceClass(driver)]">
+                  {{ driverPresenceLabel(driver) }}
                 </span>
+                <div v-if="driver.offlineReason" class="mt-1 text-xs text-slate-500">{{ offlineReasonLabel(driver.offlineReason) }}</div>
               </td>
               <td class="py-3 pr-3 font-mono text-xs">
                 {{ driver.currentRideId ? shortId(driver.currentRideId) : "-" }}
@@ -226,7 +241,10 @@ onMounted(fetchDrivers);
                 </div>
                 <span v-else class="text-slate-400">Sin ubicación</span>
               </td>
-              <td class="py-3 pr-3">{{ formatDate(driver.updatedAt) }}</td>
+              <td class="py-3 pr-3">
+                <div>{{ formatDate(driver.lastSeenAt) }}</div>
+                <div class="text-xs text-slate-400">Intención: {{ driver.availabilityIntent || "-" }}</div>
+              </td>
               <td class="py-3 pr-3">
                 <span v-if="driver.isSimUser" class="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-700">Simulado</span>
                 <span v-else class="text-slate-400">Real</span>

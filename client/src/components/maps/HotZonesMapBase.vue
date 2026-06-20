@@ -22,6 +22,7 @@ import {
   escapeMapHtml,
   shortMapId,
 } from "./mapPrimitives.js";
+import { driverPresenceLabel } from "../../lib/driverPresence.js";
 
 const mapEl = ref(null);
 const requestsPanelEl = ref(null);
@@ -281,7 +282,11 @@ async function fetchSnapshot({ fit = false, quiet = false } = {}) {
     state.zones = result?.zones || [];
     state.coverage = result?.coverage || null;
     state.requests = result?.requests || [];
-    state.drivers = result?.drivers || [];
+    state.drivers = (result?.drivers || []).map((driver) => ({
+      ...driver,
+      status: driver.status || "online",
+      availabilityIntent: driver.availabilityIntent || "online",
+    }));
     state.serviceTypes = result?.serviceTypes || [];
     state.totals = result?.totals || state.totals;
     state.lastUpdatedAt = result?.server?.now || new Date().toISOString();
@@ -324,6 +329,12 @@ function formatAge(value) {
 
 function formatTime(value) {
   return value ? new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "-";
+}
+
+function formatLastSeen(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "-" : date.toLocaleString();
 }
 
 function shortId(value) {
@@ -475,7 +486,8 @@ onBeforeUnmount(() => {
               <strong>{{ selectedDriver.vehicle?.plate || "Sin placa" }}</strong>
               · {{ [selectedDriver.vehicle?.color, selectedDriver.vehicle?.make, selectedDriver.vehicle?.model].filter(Boolean).join(" ") || "Vehículo sin detalle" }}
             </p>
-            <p class="mt-1 text-xs text-slate-500">{{ selectedDriver.zoneName }} · Disponible</p>
+            <p class="mt-1 text-xs text-slate-500">{{ selectedDriver.zoneName }} · {{ driverPresenceLabel(selectedDriver) }}</p>
+            <p class="mt-1 text-xs text-slate-500">Última conexión: {{ formatLastSeen(selectedDriver.lastSeenAt) }}</p>
           </div>
 
           <div v-else-if="selectedZone" class="rounded-md border border-slate-200 bg-white p-4">

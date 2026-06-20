@@ -67,6 +67,9 @@ function buildDriverRealtimePayload(driver) {
     driver: {
       userId: driver.userId,
       status: driver.status,
+      availabilityIntent: driver.availabilityIntent,
+      lastSeenAt: driver.lastSeenAt,
+      offlineReason: driver.offlineReason,
       updatedAt: driver.updatedAt || new Date().toISOString(),
       currentLocation: driver.currentLocation ?? null,
       headingDegrees: driver.headingDegrees ?? null,
@@ -113,21 +116,26 @@ async function ensureDriver(driverId, { forUpdate = false, dbClient } = {}) {
   return driver;
 }
 
-async function updateLocation(driverId, { currentLocationWkt, heading, speedKmh }) {
+async function updateLocation(driverId, { currentLocationWkt, heading, speedKmh, hasLocation }) {
   await ensureDriver(driverId);
 
   const driver = await DriverModel.updateLocation(driverId, {
     currentLocationWkt,
     heading,
     speedKmh,
+    hasLocation,
   });
 
   if (!driver) {
     throw createHttpError(500, "Failed to update driver location.");
   }
 
-  await emitDriverLocationUpdated(driver);
-  await matchPendingRidesForDriverBestEffort(driver);
+  if (hasLocation) {
+    await emitDriverLocationUpdated(driver);
+  }
+  if (driver.status === "online") {
+    await matchPendingRidesForDriverBestEffort(driver);
+  }
 
   return driver;
 }
@@ -173,6 +181,30 @@ async function setDriverStatus(driverId, status, dbClient) {
   return driver;
 }
 
+async function restoreDriverAvailability(driverId, dbClient) {
+  const driver = await DriverModel.restoreAvailability(driverId, dbClient);
+  if (!driver) {
+    throw createHttpError(500, "Failed to restore driver availability.");
+  }
+  safeRealtimeEmit(() =>
+    emitToRole("admin", "admin:driver-status-updated", buildDriverRealtimePayload(driver))
+  );
+  return driver;
+}
+
+async function expireStaleOnlineDrivers() {
+  const driverIds = await DriverModel.expireStaleOnlineDrivers();
+  for (const driverId of driverIds) {
+    const driver = await DriverModel.getDriverById(driverId);
+    if (driver) {
+      safeRealtimeEmit(() =>
+        emitToRole("admin", "admin:driver-status-updated", buildDriverRealtimePayload(driver))
+      );
+    }
+  }
+  return driverIds;
+}
+
 async function listServiceTypes(driverId) {
   await ensureDriver(driverId);
   return {
@@ -193,6 +225,8 @@ module.exports = {
   findAvailableDriversNear,
   ensureDriverForUpdate,
   setDriverStatus,
+  restoreDriverAvailability,
+  expireStaleOnlineDrivers,
   listServiceTypes,
   replaceServiceTypes,
 };

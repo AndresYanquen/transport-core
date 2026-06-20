@@ -7,6 +7,7 @@ import { Car, Crosshair, MapPinned, Radio, RefreshCw, Search, Wifi, WifiOff } fr
 import { apiRequest } from "../../../services/api.js";
 import { createRealtimeSocket } from "../../../services/realtime.js";
 import { useAuthStore } from "../../../stores/auth.js";
+import { driverPresenceClass, driverPresenceKey, driverPresenceLabel, isDriverStale, offlineReasonLabel } from "../../../lib/driverPresence.js";
 
 const mapEl = ref(null);
 const auth = useAuthStore();
@@ -28,30 +29,17 @@ let socket = null;
 let refreshTimer = null;
 const markerByDriverId = new Map();
 
-const statusLabels = {
-  online: "Disponible",
-  busy: "Ocupado",
-  unavailable: "No disponible",
-  offline: "Desconectado",
-};
-
-const statusClasses = {
-  online: "bg-emerald-100 text-emerald-800",
-  busy: "bg-amber-100 text-amber-800",
-  unavailable: "bg-slate-100 text-slate-700",
-  offline: "bg-slate-100 text-slate-500",
-};
-
 const locatedDrivers = computed(() => state.drivers.filter((driver) => hasLocation(driver)));
-const onlineDrivers = computed(() => state.drivers.filter((driver) => driver.status === "online"));
-const busyDrivers = computed(() => state.drivers.filter((driver) => driver.status === "busy"));
-const staleDrivers = computed(() => locatedDrivers.value.filter((driver) => isStale(driver.updatedAt)));
+const onlineDrivers = computed(() => state.drivers.filter((driver) => driverPresenceKey(driver) === "available"));
+const busyDrivers = computed(() => state.drivers.filter((driver) => ["busy", "busy_unreachable"].includes(driverPresenceKey(driver))));
+const staleDrivers = computed(() => state.drivers.filter((driver) => isDriverStale(driver)));
 
 const filteredDrivers = computed(() => {
   const query = state.search.trim().toLowerCase();
   return state.drivers.filter((driver) => {
-    if (state.statusFilter === "active" && !["online", "busy"].includes(driver.status)) return false;
-    if (state.statusFilter !== "all" && state.statusFilter !== "active" && driver.status !== state.statusFilter) return false;
+    const presenceKey = driverPresenceKey(driver);
+    if (state.statusFilter === "active" && !["available", "busy", "busy_unreachable"].includes(presenceKey)) return false;
+    if (state.statusFilter !== "all" && state.statusFilter !== "active" && presenceKey !== state.statusFilter) return false;
     if (!query) return true;
 
     const haystack = [
@@ -75,12 +63,6 @@ const selectedDriver = computed(() => state.drivers.find((driver) => driver.user
 
 function hasLocation(driver) {
   return Number.isFinite(Number(driver?.currentLocation?.lat)) && Number.isFinite(Number(driver?.currentLocation?.lng));
-}
-
-function isStale(value) {
-  if (!value) return true;
-  const updated = new Date(value).getTime();
-  return !Number.isFinite(updated) || Date.now() - updated > 2 * 60 * 1000;
 }
 
 function driverName(driver) {
@@ -130,8 +112,8 @@ function escapeHtml(value) {
 }
 
 function markerIcon(driver) {
-  const status = driver.status || "offline";
-  const tone = status === "online" ? "online" : status === "busy" ? "busy" : status === "unavailable" ? "unavailable" : "offline";
+  const presence = driverPresenceKey(driver);
+  const tone = presence === "available" ? "online" : presence === "busy" ? "busy" : presence === "unavailable" ? "unavailable" : presence === "busy_unreachable" || presence === "connection_lost" ? "connection-lost" : "offline";
   const heading = Number(driver.headingDegrees || 0);
 
   return L.divIcon({
@@ -149,9 +131,9 @@ function markerIcon(driver) {
 function markerPopup(driver) {
   return `
     <strong>${escapeHtml(driverName(driver))}</strong><br>
-    ${escapeHtml(statusLabels[driver.status] || driver.status || "-")}<br>
+    ${escapeHtml(driverPresenceLabel(driver))}<br>
     ${escapeHtml(driver.vehicle?.plate || "Sin placa")} · ${escapeHtml(formatVehicle(driver))}<br>
-    Actualizado: ${escapeHtml(formatTime(driver.updatedAt))}
+    Última conexión: ${escapeHtml(formatTime(driver.lastSeenAt))}
   `;
 }
 
@@ -405,11 +387,12 @@ onBeforeUnmount(() => {
             <button
               v-for="filter in [
                 ['active', 'Activos'],
-                ['online', 'Online'],
+                ['available', 'Disponibles'],
                 ['busy', 'Ocupados'],
                 ['all', 'Todos'],
                 ['unavailable', 'No disp.'],
-                ['offline', 'Offline'],
+                ['driver_offline', 'Offline'],
+                ['connection_lost', 'Sin conexión'],
               ]"
               :key="filter[0]"
               class="h-8 rounded-md border px-2 text-xs font-medium"
@@ -442,14 +425,14 @@ onBeforeUnmount(() => {
                   <div class="truncate text-sm font-semibold text-slate-950">{{ driverName(driver) }}</div>
                   <div class="mt-0.5 truncate text-xs text-slate-500">{{ driver.vehicle?.plate || "Sin placa" }} · {{ formatVehicle(driver) }}</div>
                 </div>
-                <span class="shrink-0 rounded px-2 py-0.5 text-xs font-medium" :class="statusClasses[driver.status] || statusClasses.offline">
-                  {{ statusLabels[driver.status] || driver.status }}
+                <span class="shrink-0 rounded border px-2 py-0.5 text-xs font-medium" :class="driverPresenceClass(driver)">
+                  {{ driverPresenceLabel(driver) }}
                 </span>
               </div>
               <div class="flex items-center justify-between text-xs text-slate-500">
                 <span class="inline-flex items-center gap-1">
                   <Radio class="h-3.5 w-3.5" />
-                  {{ hasLocation(driver) ? formatTime(driver.updatedAt) : "Sin ubicacion" }}
+                  {{ formatTime(driver.lastSeenAt) }}
                 </span>
                 <span v-if="driver.currentRideId" class="inline-flex items-center gap-1 text-amber-700">
                   <Car class="h-3.5 w-3.5" />
@@ -469,15 +452,23 @@ onBeforeUnmount(() => {
           <div class="mt-3 grid gap-2 text-sm text-slate-600">
             <div class="flex justify-between gap-3">
               <span>Estado</span>
-              <span class="font-medium text-slate-950">{{ statusLabels[selectedDriver.status] || selectedDriver.status }}</span>
+              <span class="font-medium text-slate-950">{{ driverPresenceLabel(selectedDriver) }}</span>
             </div>
             <div class="flex justify-between gap-3">
               <span>Velocidad</span>
               <span class="font-medium text-slate-950">{{ selectedDriver.speedKmh ?? 0 }} km/h</span>
             </div>
             <div class="flex justify-between gap-3">
-              <span>Ultima senal</span>
-              <span class="font-medium text-slate-950">{{ formatTime(selectedDriver.updatedAt) }}</span>
+              <span>Última conexión</span>
+              <span class="font-medium text-slate-950">{{ formatTime(selectedDriver.lastSeenAt) }}</span>
+            </div>
+            <div class="flex justify-between gap-3">
+              <span>Motivo offline</span>
+              <span class="text-right font-medium text-slate-950">{{ offlineReasonLabel(selectedDriver.offlineReason) }}</span>
+            </div>
+            <div class="flex justify-between gap-3">
+              <span>Intención</span>
+              <span class="font-medium text-slate-950">{{ selectedDriver.availabilityIntent || "-" }}</span>
             </div>
             <div class="flex justify-between gap-3">
               <span>Servicios</span>
@@ -515,6 +506,10 @@ onBeforeUnmount(() => {
 
 .driver-map-marker--offline {
   background: #94a3b8;
+}
+
+.driver-map-marker--connection-lost {
+  background: #dc2626;
 }
 
 .driver-map-marker__arrow {

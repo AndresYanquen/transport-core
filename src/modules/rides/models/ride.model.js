@@ -353,6 +353,43 @@ class RideModel {
     return rows[0] ?? null;
   }
 
+  static async getActiveRideByDriverId(dbClient, driverId, { forUpdate = false } = {}) {
+    const executor = getExecutor(dbClient);
+    const terminalStatuses = Array.from(TERMINAL_RIDE_STATUSES);
+    const { rows } = await executor.query(
+      `
+        SELECT ${BASE_RIDE_FIELDS}
+        FROM rides
+        WHERE driver_id = $1
+          AND status <> ALL($2::text[])
+        ORDER BY updated_at DESC
+        LIMIT 1
+        ${forUpdate ? "FOR UPDATE" : ""}
+      `,
+      [driverId, terminalStatuses]
+    );
+    return rows[0] ?? null;
+  }
+
+  static async isRideInActiveZone(dbClient, rideId) {
+    const executor = getExecutor(dbClient);
+    const { rows } = await executor.query(
+      `
+        SELECT EXISTS (
+          SELECT 1
+          FROM rides r
+          JOIN operational_zones z
+            ON z.status = 'active'
+           AND r.pickup_point IS NOT NULL
+           AND ST_Covers(z.polygon::geometry, r.pickup_point::geometry)
+          WHERE r.id = $1
+        ) AS is_in_active_zone
+      `,
+      [rideId]
+    );
+    return Boolean(rows[0]?.is_in_active_zone);
+  }
+
   static async listRideEvents(rideId, { limit = 20, offset = 0 } = {}, dbClient) {
     const executor = getExecutor(dbClient);
     const { rows } = await executor.query(
