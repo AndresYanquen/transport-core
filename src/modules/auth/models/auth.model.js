@@ -1,4 +1,5 @@
 const { pool, query } = require("../../../config/database");
+const { normalizePhoneNumber } = require("../utils/phone");
 
 const baseUserSelect = `
   SELECT
@@ -71,7 +72,9 @@ const baseUserSelect = `
 
 class AuthModel {
   static async findByEmail(email) {
-    const normalizedEmail = email.toLowerCase();
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    if (!normalizedEmail) return null;
+
     const { rows } = await query(
       `
         ${baseUserSelect}
@@ -97,6 +100,102 @@ class AuthModel {
     return rows[0] ?? null;
   }
 
+  static async findClientByPhoneNumber(phoneNumber) {
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    if (!normalizedPhone) return null;
+
+    const { rows } = await query(
+      `
+        ${baseUserSelect}
+        WHERE u.role = 'client'
+          AND u.phone_number = $1
+          AND u.deleted_at IS NULL
+        ORDER BY u.created_at ASC
+        LIMIT 1
+      `,
+      [normalizedPhone]
+    );
+
+    return rows[0] ?? null;
+  }
+
+  static async createPhoneOnlyClient({
+    phoneNumber,
+    firstName,
+    lastName,
+    createdByOperatorId,
+  }) {
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    if (!normalizedPhone) {
+      throw new Error("phoneNumber is required.");
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const profile = {
+        phoneOnly: true,
+        source: "operator_phone_call",
+        createdByOperatorId: createdByOperatorId || null,
+      };
+
+      const userInsert = await client.query(
+        `
+          INSERT INTO users (
+            email,
+            username,
+            password_hash,
+            first_name,
+            last_name,
+            phone_number,
+            role,
+            status,
+            phone_verified,
+            profile
+          )
+          VALUES ($1, NULL, $2, $3, $4, $5, 'client', 'active', false, $6::jsonb)
+          RETURNING id
+        `,
+        [
+          null,
+          null,
+          firstName ?? null,
+          lastName ?? null,
+          normalizedPhone,
+          JSON.stringify(profile),
+        ]
+      );
+
+      const userId = userInsert.rows[0].id;
+
+      await client.query(
+        `
+          INSERT INTO clients (user_id)
+          VALUES ($1)
+        `,
+        [userId]
+      );
+
+      await client.query("COMMIT");
+      return this.findById(userId);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      if (
+        error.code === "23505" &&
+        (error.constraint === "users_client_phone_unique_not_null" ||
+          error.detail?.includes("(phone_number)"))
+      ) {
+        return this.findClientByPhoneNumber(normalizedPhone);
+      }
+
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   static async createUser({
     email,
     passwordHash,
@@ -114,7 +213,8 @@ class AuthModel {
     clientProfile,
     driverProfile,
   }) {
-    const normalizedEmail = email.toLowerCase();
+    const normalizedEmail = email ? String(email).trim().toLowerCase() : null;
+    const normalizedPhone = phoneNumber ? normalizePhoneNumber(phoneNumber) : null;
     const client = await pool.connect();
 
     try {
@@ -164,7 +264,7 @@ class AuthModel {
           passwordHash,
           firstName ?? null,
           lastName ?? null,
-          phoneNumber ?? null,
+          normalizedPhone,
           resolvedRole,
           status,
           emailVerificationToken ?? null,
@@ -273,8 +373,13 @@ class AuthModel {
     } catch (error) {
       await client.query("ROLLBACK");
       if (error.code === "23505") {
-        const conflictField = error.detail?.includes("(email)")
+        const conflictField = error.detail?.includes("lower(email)") ||
+          error.constraint === "users_email_unique_not_null" ||
+          error.detail?.includes("(email)")
           ? "Email"
+          : error.detail?.includes("(phone_number)") ||
+            error.constraint === "users_client_phone_unique_not_null"
+          ? "Phone number"
           : error.detail?.includes("(username)")
           ? "Username"
           : error.detail?.includes("(license_number)")

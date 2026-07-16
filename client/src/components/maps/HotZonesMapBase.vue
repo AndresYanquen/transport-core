@@ -9,7 +9,7 @@ import "leaflet.markercluster";
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import {
   AlertTriangle, CalendarRange, Check, Clock3, Eye, EyeOff, Flame, Layers3,
-  MapPin, MapPinned, PanelRightOpen, RefreshCw, Settings2, Users, Wifi,
+  Copy, MapPin, MapPinned, PanelRightOpen, RefreshCw, Settings2, Users, Wifi,
   WifiOff, X,
 } from "lucide-vue-next";
 import { useRouter } from "vue-router";
@@ -341,6 +341,29 @@ function shortId(value) {
   return shortMapId(value);
 }
 
+async function copyText(value) {
+  const text = String(value || "");
+  if (!text) return;
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand("copy");
+    document.body.removeChild(textarea);
+  } catch (_err) {
+    state.error = "No se pudo copiar el ID de la solicitud.";
+  }
+}
+
 watch(() => [filters.period, filters.status, filters.serviceType], () => fetchSnapshot());
 
 onMounted(async () => {
@@ -470,7 +493,7 @@ onBeforeUnmount(() => {
             <X class="h-4 w-4" />
           </button>
           <div v-if="selectedRequest" class="rounded-md border border-violet-200 bg-violet-50 p-4">
-            <div class="flex items-start justify-between gap-3"><div><p class="text-xs font-medium uppercase text-violet-700">Solicitud seleccionada</p><h2 class="mt-1 font-semibold text-slate-950">#{{ shortId(selectedRequest.id) }}</h2></div><MapPin class="h-5 w-5 text-violet-700" /></div>
+            <div class="flex items-start justify-between gap-3"><div><p class="text-xs font-medium uppercase text-violet-700">Solicitud seleccionada</p><div class="mt-1 flex items-center gap-1"><h2 class="font-semibold text-slate-950">#{{ shortId(selectedRequest.id) }}</h2><button class="grid h-6 w-6 place-items-center rounded-md text-slate-400 hover:bg-violet-100 hover:text-slate-900" type="button" title="Copiar ID de solicitud" aria-label="Copiar ID de solicitud" @click="copyText(selectedRequest.id)"><Copy class="h-3.5 w-3.5" /></button></div></div><MapPin class="h-5 w-5 text-violet-700" /></div>
             <div class="mt-3 text-sm text-slate-700"><strong>{{ selectedRequest.pickupAddress }}</strong><p class="mt-1">{{ selectedRequest.clientName }} · {{ selectedRequest.serviceName }}</p><p class="mt-1 text-xs">{{ statusLabels[selectedRequest.status] }} · {{ formatAge(selectedRequest.requestedAt) }}</p></div>
           </div>
 
@@ -529,7 +552,7 @@ onBeforeUnmount(() => {
             <div class="flex items-center justify-between border-b border-slate-200 px-4 py-3"><h2 class="font-semibold">Solicitudes {{ selectedZone ? `en ${selectedZone.name}` : "activas" }}</h2><span class="text-sm text-slate-500">{{ visibleRequests.length }}</span></div>
             <div class="max-h-[390px] overflow-auto">
               <button v-for="request in visibleRequests" :key="request.id" class="block w-full border-b border-slate-100 p-3 text-left hover:bg-slate-50" :class="state.selectedRequestId === request.id ? 'bg-violet-50' : ''" type="button" @click="focusRequest(request)">
-                <div class="flex items-start justify-between gap-2"><strong class="text-sm">#{{ shortId(request.id) }}</strong><span class="text-xs text-slate-500">{{ formatAge(request.requestedAt) }}</span></div>
+                <div class="flex items-start justify-between gap-2"><span class="flex min-w-0 items-center gap-1"><strong class="text-sm">#{{ shortId(request.id) }}</strong><button class="grid h-6 w-6 place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-900" type="button" title="Copiar ID de solicitud" aria-label="Copiar ID de solicitud" @click.stop="copyText(request.id)"><Copy class="h-3.5 w-3.5" /></button></span><span class="text-xs text-slate-500">{{ formatAge(request.requestedAt) }}</span></div>
                 <div class="mt-1 truncate text-sm text-slate-700">{{ request.pickupAddress }}</div>
                 <div class="mt-2 flex items-center justify-between gap-2 text-xs"><span class="rounded px-2 py-0.5" :style="{ color: request.serviceColor, backgroundColor: `${request.serviceColor}18` }">{{ request.serviceName }}</span><span class="text-slate-500">{{ statusLabels[request.status] }}</span></div>
               </button>

@@ -18,6 +18,15 @@ async function details(req, res, next) {
   }
 }
 
+async function geocode(req, res, next) {
+  try {
+    const result = await PlacesService.geocode(req.placesQuery);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function reverseGeocode(req, res, next) {
   try {
     const result = await PlacesService.reverseGeocode(req.placesQuery);
@@ -30,5 +39,6 @@ async function reverseGeocode(req, res, next) {
 module.exports = {
   autocomplete,
   details,
+  geocode,
   reverseGeocode,
 };

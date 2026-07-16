@@ -8,14 +8,14 @@ const router = Router();
 
 router.get(
   "/",
-  authorizeRoles("admin"),
+  authorizeRoles("admin", "operator"),
   AdminUsersMiddleware.validateListUsers,
   AdminUsersController.listUsers
 );
 
 router.post(
   "/",
-  authorizeRoles("admin"),
+  authorizeRoles("admin", "operator"),
   AdminUsersMiddleware.validateCreateUser,
   AdminUsersController.createUser
 );

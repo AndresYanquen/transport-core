@@ -298,7 +298,7 @@ function canViewRide(rideRow, viewer) {
 
   const role = String(viewer.role).toLowerCase();
 
-  if (role === "admin") {
+  if (role === "admin" || role === "operator") {
     return true;
   }
 
@@ -1657,26 +1657,9 @@ async function listDriverInvites(filters = {}, viewer = null) {
     throw createHttpError(400, "driverId is required for this query.");
   }
 
-  let statuses;
-  if (normalizedFilters.statuses) {
-    statuses = String(normalizedFilters.statuses)
-      .split(",")
-      .map((value) => value.trim().toLowerCase())
-      .filter(Boolean);
-
-    const invalidStatuses = statuses.filter(
-      (status) => !RIDE_INVITE_STATUS_VALUES.includes(status)
-    );
-
-    if (invalidStatuses.length > 0) {
-      throw createHttpError(
-        400,
-        `Invalid invite status value(s): ${invalidStatuses.join(", ")}.`
-      );
-    }
-  } else {
-    statuses = [RideInviteStatus.PENDING];
-  }
+  const statuses = parseInviteStatuses(normalizedFilters.statuses, [
+    RideInviteStatus.PENDING,
+  ]);
 
   const limit = normalizedFilters.limit !== undefined
     ? Number(normalizedFilters.limit)
@@ -1706,6 +1689,146 @@ async function listDriverInvites(filters = {}, viewer = null) {
       pickupDistanceMeters: row.pickupDistanceMeters,
       ride: row.ride,
     })),
+  };
+}
+
+function parseInviteStatuses(rawStatuses, fallback = null) {
+  if (!rawStatuses) {
+    return fallback;
+  }
+
+  const statuses = String(rawStatuses)
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+
+  const invalidStatuses = statuses.filter(
+    (status) => !RIDE_INVITE_STATUS_VALUES.includes(status)
+  );
+
+  if (invalidStatuses.length > 0) {
+    throw createHttpError(
+      400,
+      `Invalid invite status value(s): ${invalidStatuses.join(", ")}.`
+    );
+  }
+
+  return statuses;
+}
+
+async function listRideDriverInvites(rideId, filters = {}, viewer = null) {
+  if (!["admin", "operator"].includes(String(viewer?.role || "").toLowerCase())) {
+    throw createHttpError(403, "Forbidden: insufficient permissions for ride invites.");
+  }
+
+  const rideRow = await RideModel.getRideById(rideId, {
+    includeDriver: true,
+    includePassenger: true,
+  });
+
+  if (!rideRow) {
+    throw createHttpError(404, `Ride ${rideId} not found.`);
+  }
+
+  const invites = await RideModel.listDriverInvites(null, rideId, {
+    statuses: parseInviteStatuses(filters.statuses),
+  });
+
+  return {
+    ride: RideModel.mapRideRow(rideRow),
+    invites,
+  };
+}
+
+function parsePositiveInteger(value, { fallback, max, label }) {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0 || (max && parsed > max)) {
+    throw createHttpError(
+      400,
+      `${label} must be a positive integer${max ? ` up to ${max}` : ""}.`
+    );
+  }
+
+  return parsed;
+}
+
+async function listNearbyDriversForRide(rideId, filters = {}, viewer = null) {
+  if (!["admin", "operator"].includes(String(viewer?.role || "").toLowerCase())) {
+    throw createHttpError(403, "Forbidden: insufficient permissions for nearby drivers.");
+  }
+
+  const rideRow = await RideModel.getRideById(rideId, {
+    includeDriver: true,
+    includePassenger: true,
+  });
+
+  if (!rideRow) {
+    throw createHttpError(404, `Ride ${rideId} not found.`);
+  }
+
+  const ride = RideModel.mapRideRow(rideRow);
+  const pickupPointWkt = locationToWkt(ride.pickupLocation);
+
+  if (!pickupPointWkt) {
+    throw createHttpError(400, "Ride does not have a valid pickup location.");
+  }
+
+  const defaultRadiusMeters = await getClientDriverSearchRadiusMeters();
+  const radiusMeters = parsePositiveInteger(filters.radiusMeters, {
+    fallback: defaultRadiusMeters,
+    max: 50000,
+    label: "radiusMeters",
+  });
+  const limit = parsePositiveInteger(filters.limit, {
+    fallback: 10,
+    max: 100,
+    label: "limit",
+  });
+
+  const excludeInvited = ["1", "true", "yes"].includes(
+    String(filters.excludeInvited || "").toLowerCase()
+  );
+  const existingInvites = excludeInvited
+    ? await RideModel.listDriverInvites(null, rideId)
+    : [];
+
+  const drivers = await DriverService.findAvailableDriversNear(pickupPointWkt, {
+    radiusMeters,
+    limit,
+    excludeDriverIds: existingInvites.map((invite) => invite.driverId),
+    serviceType: ride.serviceType,
+  });
+
+  return {
+    ride,
+    radiusMeters,
+    drivers,
+  };
+}
+
+async function listRecentRideEvents(filters = {}, viewer = null) {
+  if (!["admin", "operator"].includes(String(viewer?.role || "").toLowerCase())) {
+    throw createHttpError(403, "Forbidden: insufficient permissions for ride events.");
+  }
+
+  const limit = filters.limit !== undefined ? Number(filters.limit) : 50;
+  const offset = filters.offset !== undefined ? Number(filters.offset) : 0;
+
+  if (!Number.isInteger(limit) || limit <= 0 || limit > 200) {
+    throw createHttpError(400, "limit must be an integer between 1 and 200.");
+  }
+
+  if (!Number.isInteger(offset) || offset < 0) {
+    throw createHttpError(400, "offset must be a non-negative integer.");
+  }
+
+  const eventRows = await RideModel.listRecentRideEvents({ limit, offset });
+  return {
+    events: eventRows.map(RideModel.mapEventRow),
   };
 }
 
@@ -1776,6 +1899,9 @@ module.exports = {
   listRides,
   getRideById,
   listDriverInvites,
+  listRideDriverInvites,
+  listNearbyDriversForRide,
+  listRecentRideEvents,
   __private: {
     CLIENT_DRIVER_SEARCH_RADIUS_SETTING,
     buildTransitionPlan,

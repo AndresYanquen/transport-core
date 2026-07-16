@@ -112,12 +112,23 @@ async function updateLocation(driverId, { currentLocationWkt, heading, speedKmh,
     `
       UPDATE drivers d
       SET
+        status = CASE
+          WHEN $4::boolean
+            AND d.status = 'offline'
+            AND d.availability_intent = 'online'
+            THEN 'online'
+          ELSE d.status
+        END,
         current_location = CASE WHEN $4::boolean THEN ST_GeogFromText($1) ELSE current_location END,
         heading_degrees = CASE WHEN $4::boolean THEN COALESCE($2::double precision, heading_degrees) ELSE heading_degrees END,
         speed_kmh = CASE WHEN $4::boolean THEN COALESCE($3::double precision, speed_kmh) ELSE speed_kmh END,
         last_seen_at = NOW(),
         offline_reason = CASE
           WHEN d.status IN ('online', 'busy') THEN NULL
+          WHEN $4::boolean
+            AND d.status = 'offline'
+            AND d.availability_intent = 'online'
+            THEN NULL
           ELSE d.offline_reason
         END,
         updated_at = NOW()

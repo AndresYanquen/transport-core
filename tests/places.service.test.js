@@ -109,6 +109,31 @@ test("google transport errors are controlled and do not expose API key", async (
   );
 });
 
+test("google denied errors include sanitized configuration detail", async () => {
+  await assert.rejects(
+    () =>
+      PlacesService.autocomplete(
+        {
+          query: "Bogota",
+          sessionToken: "session-1",
+        },
+        {
+          httpClient: buildMockHttp({
+            status: "REQUEST_DENIED",
+            error_message: "API key test-google-key is not authorized to use this API.",
+          }),
+        }
+      ),
+    (error) => {
+      assert.equal(error.status, 502);
+      assert.match(error.message, /not authorized/);
+      assert.match(error.message, /Places API\/Geocoding API/);
+      assert.equal(error.message.includes("test-google-key"), false);
+      return true;
+    }
+  );
+});
+
 test("details returns normalized feature with coordinates", async () => {
   const response = await PlacesService.details(
     {
@@ -132,6 +157,35 @@ test("details returns normalized feature with coordinates", async () => {
     feature: {
       id: "place-2",
       text: "Plaza de Bolivar",
+      placeName: "Cra. 7 #11-10, Bogota, Colombia",
+      center: [-74.0758, 4.5981],
+    },
+  });
+});
+
+test("geocode returns normalized feature with coordinates", async () => {
+  const response = await PlacesService.geocode(
+    {
+      query: "Cra. 7 #11-10, Bogota",
+    },
+    {
+      httpClient: buildMockHttp({
+        status: "OK",
+        results: [
+          {
+            place_id: "geocode-1",
+            formatted_address: "Cra. 7 #11-10, Bogota, Colombia",
+            geometry: { location: { lat: 4.5981, lng: -74.0758 } },
+          },
+        ],
+      }),
+    }
+  );
+
+  assert.deepEqual(response, {
+    feature: {
+      id: "geocode-1",
+      text: "Cra. 7 #11-10",
       placeName: "Cra. 7 #11-10, Bogota, Colombia",
       center: [-74.0758, 4.5981],
     },

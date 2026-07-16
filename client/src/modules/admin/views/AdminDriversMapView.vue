@@ -79,7 +79,16 @@ function shortId(id) {
 function formatTime(value) {
   if (!value) return "-";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "-" : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return Number.isNaN(date.getTime())
+    ? "-"
+    : date.toLocaleString([], {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
 }
 
 function formatVehicle(driver) {

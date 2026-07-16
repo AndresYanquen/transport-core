@@ -67,6 +67,19 @@ function details(req, res, next) {
   next();
 }
 
+function geocode(req, res, next) {
+  const { query } = req.query || {};
+
+  if (isBlank(query)) {
+    return res.status(400).json({ message: "query is required." });
+  }
+
+  req.placesQuery = {
+    query: String(query).trim(),
+  };
+  next();
+}
+
 function reverseGeocode(req, res, next) {
   const { lat, lng } = req.query || {};
   const parsedLat = parseCoordinate(lat, { min: -90, max: 90 });
@@ -90,6 +103,7 @@ function reverseGeocode(req, res, next) {
 module.exports = {
   autocomplete,
   details,
+  geocode,
   reverseGeocode,
   __private: {
     parseCoordinate,

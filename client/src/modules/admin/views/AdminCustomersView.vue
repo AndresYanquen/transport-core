@@ -6,6 +6,7 @@ import { apiRequest } from "../../../services/api.js";
 const state = reactive({
   loading: true,
   error: "",
+  users: [],
   rides: [],
   lastUpdatedAt: null,
 });
@@ -28,10 +29,12 @@ async function fetchCustomers() {
   state.error = "";
 
   try {
-    const data = await apiRequest("/api/admin/simulation/state?limit=500", {
-      method: "GET",
-    });
-    state.rides = data?.rides || [];
+    const [usersData, ridesData] = await Promise.all([
+      apiRequest("/api/admin/users?role=client&limit=200", { method: "GET" }),
+      apiRequest("/api/rides?limit=500&includePassenger=true", { method: "GET" }),
+    ]);
+    state.users = usersData?.users || [];
+    state.rides = ridesData?.rides || [];
     state.lastUpdatedAt = new Date().toISOString();
   } catch (err) {
     state.error = err?.message || "No se pudieron cargar clientes.";
@@ -53,6 +56,7 @@ function formatDate(value) {
 }
 
 function customerName(customer) {
+  if (customer.fullName) return customer.fullName;
   const name = [customer.firstName, customer.lastName].filter(Boolean).join(" ").trim();
   return name || customer.email || shortId(customer.id);
 }
@@ -64,13 +68,37 @@ function isActiveRide(ride) {
 const customers = computed(() => {
   const byCustomer = new Map();
 
+  for (const user of state.users) {
+    byCustomer.set(user.id, {
+      id: user.id,
+      email: user.email || "",
+      firstName: user.firstName || "",
+      lastName: user.lastName || "",
+      fullName: [user.firstName, user.lastName].filter(Boolean).join(" ").trim(),
+      status: user.status || "",
+      rating: user.clientProfile?.rating || 0,
+      totalServices: 0,
+      activeServices: 0,
+      completedServices: 0,
+      canceledServices: 0,
+      lastServiceAt: null,
+      lastStatus: "",
+      lastPickup: "",
+      lastDropoff: "",
+    });
+  }
+
   for (const ride of state.rides) {
     if (!ride.clientId) continue;
+    const passenger = ride.passenger || ride.client || {};
     const current = byCustomer.get(ride.clientId) || {
       id: ride.clientId,
-      email: ride.client?.email || "",
-      firstName: ride.client?.firstName || "",
-      lastName: ride.client?.lastName || "",
+      email: passenger.email || "",
+      firstName: passenger.firstName || "",
+      lastName: passenger.lastName || "",
+      fullName: passenger.fullName || "",
+      status: "",
+      rating: 0,
       totalServices: 0,
       activeServices: 0,
       completedServices: 0,

@@ -45,10 +45,7 @@ const iconMap = {
 };
 
 const activeRootCode = computed(() => {
-  const match = navigation.state.items.find((item) => {
-    if (!item.path || item.path === "/") return route.path === "/";
-    return route.path === item.path || route.path.startsWith(`${item.path}/`);
-  });
+  const match = navigation.state.items.find((item) => isMenuItemActive(item));
   return match?.code || "dashboard";
 });
 
@@ -86,6 +83,21 @@ function closeMenus() {
   closeFlyout();
 }
 
+function handleRootMenuClick(item, event) {
+  if (!item?.children?.length) {
+    closeMenus();
+    return;
+  }
+
+  if (item.code === activeRootCode.value) {
+    event.preventDefault();
+    openFlyout(item.code);
+    return;
+  }
+
+  closeMenus();
+}
+
 function userDisplayName(user) {
   const name = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim();
   return name || user?.email || "Admin";
@@ -112,17 +124,17 @@ onMounted(() => {
 
     <aside
       :class="[
-        'fixed inset-y-0 left-0 z-[1300] flex w-72 flex-col border-r border-slate-200 bg-white transition-transform duration-200',
-        sidebarCollapsed ? 'lg:-translate-x-full' : 'lg:translate-x-0',
-        sidebarOpen ? 'translate-x-0' : '-translate-x-full',
+        'fixed inset-y-0 left-0 z-[1300] flex w-72 flex-col border-r border-slate-200 bg-white transition-[transform,width] duration-200',
+        sidebarCollapsed ? 'lg:w-16' : 'lg:w-72',
+        sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
       ]"
     >
-      <div class="flex h-14 items-center justify-between border-b border-slate-200 px-4">
-        <RouterLink class="flex items-center gap-2 font-semibold" to="/">
+      <div :class="['flex h-14 items-center justify-between border-b border-slate-200 px-4', sidebarCollapsed ? 'lg:justify-center lg:px-2' : '']">
+        <RouterLink class="flex min-w-0 items-center gap-2 font-semibold" to="/">
           <span class="grid h-8 w-8 place-items-center rounded-md bg-slate-950 text-white">
             <ShieldCheck class="h-4 w-4" />
           </span>
-          Admin Panel
+          <span :class="['truncate', sidebarCollapsed ? 'lg:hidden' : '']">Admin Panel</span>
         </RouterLink>
         <button
           class="grid h-8 w-8 place-items-center rounded-md border border-slate-200 text-slate-600 lg:hidden"
@@ -133,7 +145,7 @@ onMounted(() => {
         </button>
       </div>
 
-      <nav class="min-h-0 flex-1 overflow-visible px-3 py-3">
+      <nav :class="['min-h-0 flex-1 overflow-visible px-3 py-3', sidebarCollapsed ? 'lg:px-2' : '']">
         <div v-if="navigation.state.loading" class="px-2 py-3 text-sm text-slate-500">Cargando menú...</div>
         <div v-else-if="navigation.state.error" class="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
           {{ navigation.state.error }}
@@ -151,12 +163,13 @@ onMounted(() => {
             <RouterLink
               :class="[
                 'group flex h-9 items-center gap-2 rounded-md px-2 text-sm font-medium transition',
+                sidebarCollapsed ? 'lg:justify-center lg:px-0' : '',
                 item.code === activeRootCode
                   ? 'bg-slate-950 !text-white shadow-sm'
                   : 'text-slate-700 hover:bg-slate-100 hover:text-slate-950',
               ]"
               :to="item.path || '/'"
-              @click="closeMenus"
+              @click="handleRootMenuClick(item, $event)"
             >
               <component
                 :is="iconFor(item)"
@@ -168,6 +181,7 @@ onMounted(() => {
               <span
                 :class="[
                   'min-w-0 flex-1 truncate transition-colors',
+                  sidebarCollapsed ? 'lg:hidden' : '',
                   item.code === activeRootCode ? 'text-white' : 'text-slate-700 group-hover:text-slate-950',
                 ]"
               >
@@ -177,6 +191,7 @@ onMounted(() => {
                 v-if="item.children?.length"
                 :class="[
                   'h-3.5 w-3.5 -rotate-90 transition-colors',
+                  sidebarCollapsed ? 'lg:hidden' : '',
                   item.code === activeRootCode ? 'text-white' : 'text-slate-400 group-hover:text-slate-600',
                 ]"
               />
@@ -247,8 +262,8 @@ onMounted(() => {
         </div>
       </nav>
 
-      <div class="border-t border-slate-200 p-3">
-        <div class="rounded-md bg-slate-50 p-3">
+      <div :class="['border-t border-slate-200 p-3', sidebarCollapsed ? 'lg:p-2' : '']">
+        <div :class="['rounded-md bg-slate-50 p-3', sidebarCollapsed ? 'lg:hidden' : '']">
           <div class="truncate text-sm font-medium text-slate-900">{{ userDisplayName(auth.state.user) }}</div>
           <div class="mt-0.5 truncate text-xs text-slate-500">{{ auth.state.user?.email }}</div>
           <button
@@ -262,7 +277,7 @@ onMounted(() => {
       </div>
     </aside>
 
-    <div :class="['transition-[padding] duration-200', sidebarCollapsed ? 'lg:pl-0' : 'lg:pl-72']">
+    <div :class="['transition-[padding] duration-200', sidebarCollapsed ? 'lg:pl-16' : 'lg:pl-72']">
       <header class="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-slate-200 bg-white/95 px-4 backdrop-blur">
         <div class="flex min-w-0 items-center gap-3">
           <button

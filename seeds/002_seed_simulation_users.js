@@ -115,7 +115,6 @@ exports.seed = async function seed(knex) {
               "premium",
               "pool",
               "xl",
-              "deliver",
               "package_delivery",
               "food_delivery",
               "car_unstuck",

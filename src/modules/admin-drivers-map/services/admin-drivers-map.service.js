@@ -25,6 +25,7 @@ function mapDriver(row) {
     currentLocation: mapPointGeoJSON(row.current_location_geojson),
     headingDegrees: row.heading_degrees === null ? null : Number(row.heading_degrees),
     speedKmh: row.speed_kmh === null ? null : Number(row.speed_kmh),
+    rating: row.rating === null ? null : Number(row.rating),
     currentRideId: row.current_ride_id || null,
     vehicle: {
       make: row.vehicle_make,
@@ -56,6 +57,7 @@ async function getDriversMapSnapshot() {
         d.updated_at,
         d.heading_degrees,
         d.speed_kmh,
+        d.rating,
         d.vehicle_make,
         d.vehicle_model,
         d.vehicle_year,

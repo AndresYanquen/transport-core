@@ -46,16 +46,43 @@ async function fetchDashboard() {
   state.error = "";
 
   try {
-    const data = await apiRequest("/api/admin/simulation/state?limit=300", {
-      method: "GET",
-    });
-    state.payload = data;
+    const [ridesData, driversData, eventsData] = await Promise.all([
+      apiRequest("/api/rides?limit=500&includePassenger=true", { method: "GET" }),
+      apiRequest("/api/admin/drivers-map", { method: "GET" }),
+      apiRequest("/api/rides/events/recent?limit=50", { method: "GET" }),
+    ]);
+    state.payload = {
+      rides: ridesData?.rides || [],
+      drivers: driversData?.drivers || [],
+      recentEvents: eventsData?.events || [],
+      metrics: {
+        rides: {
+          avgAssignmentMs: calculateAvgAssignmentMs(ridesData?.rides || []),
+        },
+      },
+    };
     state.lastUpdatedAt = new Date().toISOString();
   } catch (err) {
     state.error = err?.message || "No se pudo cargar el dashboard.";
   } finally {
     state.loading = false;
   }
+}
+
+function calculateAvgAssignmentMs(rides) {
+  let sum = 0;
+  let count = 0;
+  for (const ride of rides) {
+    const requested = parseMs(ride.requestedAt);
+    const accepted = parseMs(ride.acceptedAt);
+    if (!requested || !accepted) continue;
+    const diff = accepted - requested;
+    if (diff >= 0 && diff <= 60 * 60 * 1000) {
+      sum += diff;
+      count += 1;
+    }
+  }
+  return count ? Math.round(sum / count) : null;
 }
 
 function parseMs(value) {
@@ -190,7 +217,7 @@ const servicesByType = computed(() => {
 
 const recentActivity = computed(() =>
   events.value.slice(0, 6).map((event) => ({
-    time: fmtTime(event.occurredAt),
+    time: fmtTime(event.occurredAt || event.updatedAt || event.requestedAt),
     label: `Servicio #${shortId(event.rideId)} ${event.status}`,
     meta: event.actorType ? `actor: ${event.actorType}` : "",
   })),
@@ -202,7 +229,7 @@ const topDrivers = computed(() => {
     if (!ride.driverId) continue;
     const current = byDriver.get(ride.driverId) || {
       id: ride.driverId,
-      name: [ride.driver?.firstName, ride.driver?.lastName].filter(Boolean).join(" ").trim() || ride.driver?.email || shortId(ride.driverId),
+      name: ride.driver?.fullName || [ride.driver?.firstName, ride.driver?.lastName].filter(Boolean).join(" ").trim() || ride.driver?.email || shortId(ride.driverId),
       count: 0,
     };
     current.count += 1;
@@ -232,25 +259,40 @@ const alerts = computed(() => {
 });
 
 const miniMapPoints = computed(() => {
-  const points = [];
-  onlineDrivers.value.slice(0, 10).forEach((driver, index) => {
-    points.push({
-      key: `driver-${driver.userId}`,
-      kind: "driver",
-      left: `${16 + ((index * 17) % 68)}%`,
-      top: `${18 + ((index * 23) % 58)}%`,
-    });
-  });
-  activeRides.value.slice(0, 8).forEach((ride, index) => {
-    points.push({
-      key: `ride-${ride.id}`,
-      kind: "request",
-      left: `${22 + ((index * 19) % 62)}%`,
-      top: `${24 + ((index * 29) % 50)}%`,
-    });
-  });
-  return points;
+  const rawPoints = [
+    ...onlineDrivers.value
+      .map((driver) => ({ key: `driver-${driver.userId}`, kind: "driver", location: driver.currentLocation }))
+      .filter((point) => hasLocation(point.location))
+      .slice(0, 10),
+    ...activeRides.value
+      .map((ride) => ({ key: `ride-${ride.id}`, kind: "request", location: ride.pickupLocation }))
+      .filter((point) => hasLocation(point.location))
+      .slice(0, 8),
+  ];
+  return projectMapPoints(rawPoints);
 });
+
+function hasLocation(location) {
+  return Number.isFinite(Number(location?.lat)) && Number.isFinite(Number(location?.lng));
+}
+
+function projectMapPoints(points) {
+  if (!points.length) return [];
+  const lats = points.map((point) => Number(point.location.lat));
+  const lngs = points.map((point) => Number(point.location.lng));
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
+  const latSpan = maxLat - minLat || 0.01;
+  const lngSpan = maxLng - minLng || 0.01;
+
+  return points.map((point) => ({
+    ...point,
+    left: `${16 + ((Number(point.location.lng) - minLng) / lngSpan) * 68}%`,
+    top: `${16 + ((maxLat - Number(point.location.lat)) / latSpan) * 68}%`,
+  }));
+}
 
 onMounted(fetchDashboard);
 </script>
@@ -299,7 +341,7 @@ onMounted(fetchDashboard);
             <h2 class="text-base font-semibold text-slate-950">Mapa resumido</h2>
             <p class="text-sm text-slate-500">Conductores, solicitudes y servicios activos.</p>
           </div>
-          <RouterLink class="inline-flex h-8 items-center gap-2 rounded-md border border-slate-200 px-2.5 text-sm text-slate-700 hover:bg-slate-50" to="/admin/simulation">
+          <RouterLink class="inline-flex h-8 items-center gap-2 rounded-md border border-slate-200 px-2.5 text-sm text-slate-700 hover:bg-slate-50" to="/admin/dashboard/mapa">
             <MapPinned class="h-4 w-4" />
             Abrir mapa completo
           </RouterLink>
@@ -307,8 +349,6 @@ onMounted(fetchDashboard);
 
         <div class="relative h-72 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
           <div class="absolute inset-0 bg-[linear-gradient(to_right,rgba(148,163,184,0.28)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.28)_1px,transparent_1px)] bg-[size:32px_32px]"></div>
-          <div class="absolute left-[12%] top-[18%] h-20 w-44 rounded-full border border-emerald-300 bg-emerald-100/60"></div>
-          <div class="absolute bottom-[18%] right-[16%] h-24 w-52 rounded-full border border-amber-300 bg-amber-100/60"></div>
           <div
             v-for="point in miniMapPoints"
             :key="point.key"

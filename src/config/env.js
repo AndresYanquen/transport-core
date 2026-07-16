@@ -1,6 +1,7 @@
 const dotenv = require("dotenv");
+const path = require("path");
 
-dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
 function parseCsv(value, fallback = []) {
   if (!value) {
@@ -64,6 +65,20 @@ function withTemporaryLocalhostCors(baseOrigins, nodeEnv, allowLocalhostTemporar
   return [...new Set([...baseOrigins, ...localhostOrigins])];
 }
 
+function buildIceServers() {
+  const servers = [];
+  const stunUrls = parseCsv(process.env.WEBRTC_STUN_URLS, ["stun:stun.l.google.com:19302"]);
+  if (stunUrls.length) servers.push({ urls: stunUrls });
+  if (process.env.WEBRTC_TURN_URL) {
+    servers.push({
+      urls: process.env.WEBRTC_TURN_URL,
+      username: process.env.WEBRTC_TURN_USERNAME || "",
+      credential: process.env.WEBRTC_TURN_CREDENTIAL || "",
+    });
+  }
+  return servers;
+}
+
 const nodeEnv = process.env.NODE_ENV || "development";
 const allowLocalhostCorsTemporarily = parseBoolean(
   process.env.CORS_ALLOW_LOCALHOST_TEMP,
@@ -113,6 +128,13 @@ const env = {
   driverPresence: {
     staleAfterSeconds: parseNumber(process.env.DRIVER_PRESENCE_STALE_SECONDS, 90),
     sweepIntervalSeconds: parseNumber(process.env.DRIVER_PRESENCE_SWEEP_SECONDS, 30),
+  },
+  radio: {
+    requestTtlSeconds: parseNumber(process.env.RADIO_REQUEST_TTL_SECONDS, 180),
+    connectTimeoutSeconds: parseNumber(process.env.RADIO_CONNECT_TIMEOUT_SECONDS, 15),
+    idleTimeoutSeconds: parseNumber(process.env.RADIO_IDLE_TIMEOUT_SECONDS, 45),
+    sweepIntervalSeconds: parseNumber(process.env.RADIO_SWEEP_INTERVAL_SECONDS, 5),
+    iceServers: buildIceServers(),
   },
   google: {
     mapsApiKey: process.env.GOOGLE_MAPS_API_KEY || "",

@@ -136,7 +136,7 @@ async function submit() {
         <h2 class="mt-4 text-5xl font-semibold leading-tight tracking-normal text-white">
           {{ isOperatorLogin
             ? "Gestiona solicitudes, asignaciones, conductores e incidencias desde un solo lugar."
-            : "Monitor rides, drivers, and simulation state from one secured panel." }}
+            : "Monitor rides, drivers, and operational state from one secured panel." }}
         </h2>
         <p class="mt-5 text-base leading-7 text-slate-300">
           El acceso usa la sesión JWT del API y respeta los permisos configurados para cada rol.

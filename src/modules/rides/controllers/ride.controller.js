@@ -98,6 +98,41 @@ async function listDriverInvites(req, res, next) {
   }
 }
 
+async function listRideDriverInvites(req, res, next) {
+  try {
+    const result = await RideService.listRideDriverInvites(
+      req.params.rideId,
+      req.query,
+      req.user
+    );
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function listNearbyDrivers(req, res, next) {
+  try {
+    const result = await RideService.listNearbyDriversForRide(
+      req.params.rideId,
+      req.query,
+      req.user
+    );
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function listRecentRideEvents(req, res, next) {
+  try {
+    const result = await RideService.listRecentRideEvents(req.query, req.user);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function assignDriver(req, res, next) {
   try {
     const { driverId, radiusMeters, limit, actorType, actorId } = req.body;
@@ -253,6 +288,9 @@ module.exports = {
   createRide,
   listRides,
   listDriverInvites,
+  listRideDriverInvites,
+  listNearbyDrivers,
+  listRecentRideEvents,
   updateRideStatus,
   getRide,
   assignDriver,

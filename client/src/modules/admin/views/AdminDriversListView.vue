@@ -28,12 +28,13 @@ async function fetchDrivers() {
   state.error = "";
 
   try {
-    const data = await apiRequest("/api/admin/simulation/state?limit=300", {
-      method: "GET",
-    });
-    state.drivers = data?.drivers || [];
-    state.rides = data?.rides || [];
-    state.lastUpdatedAt = new Date().toISOString();
+    const [driversData, ridesData] = await Promise.all([
+      apiRequest("/api/admin/drivers-map", { method: "GET" }),
+      apiRequest("/api/rides?limit=500", { method: "GET" }),
+    ]);
+    state.drivers = driversData?.drivers || [];
+    state.rides = ridesData?.rides || [];
+    state.lastUpdatedAt = driversData?.server?.now || new Date().toISOString();
   } catch (err) {
     state.error = err?.message || "No se pudieron cargar conductores.";
   } finally {
@@ -92,7 +93,7 @@ const filteredDrivers = computed(() => {
 
   return state.drivers.filter((driver) => {
     if (filters.status !== "all" && driverPresenceKey(driver) !== filters.status) return false;
-    if (filters.simOnly && !driver.isSimUser) return false;
+    if (filters.simOnly && !/^driver\d+@test\.com$/i.test(driver.contact?.email || "")) return false;
     if (!q) return true;
 
     return (
@@ -246,7 +247,7 @@ onBeforeUnmount(() => socket?.disconnect());
                 <div class="text-xs text-slate-400">Intención: {{ driver.availabilityIntent || "-" }}</div>
               </td>
               <td class="py-3 pr-3">
-                <span v-if="driver.isSimUser" class="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-700">Simulado</span>
+                <span v-if="/^driver\d+@test\.com$/i.test(driver.contact?.email || '')" class="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-700">Simulado</span>
                 <span v-else class="text-slate-400">Real</span>
               </td>
             </tr>

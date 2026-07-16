@@ -59,7 +59,7 @@ test("driver heat map adds available request counts grouped by service", async (
     driverIsActive: true,
   }];
   let call = 0;
-  Database.query = async () => {
+  Database.query = async (sql, params) => {
     call += 1;
     if (call === 1) {
       return { rows: [{
@@ -71,6 +71,8 @@ test("driver heat map adds available request counts grouped by service", async (
       }] };
     }
     if (call === 2) return { rows: [{ geometry_geojson: null }] };
+    countSql = sql;
+    countParams = params;
     return { rows: [{
       zone_id: "zone-1",
       service_type: "standard",
@@ -89,6 +91,9 @@ test("driver heat map adds available request counts grouped by service", async (
       count: 4,
     }]);
     assert.equal(result.zones[0].metrics.availableRequests, 4);
+    assert.match(countSql, /NOT EXISTS[\s\S]+ride_driver_invites/);
+    assert.match(countSql, /i\.status = 'rejected'/);
+    assert.deepEqual(countParams, [["standard"], "all", "driver-1"]);
   } finally {
     DriverModel.listServiceTypes = originalListServiceTypes;
     Database.query = originalQuery;
@@ -98,6 +103,8 @@ test("driver heat map adds available request counts grouped by service", async (
 test("zone request details are paginated and exclude private pickup data", async () => {
   const originalListServiceTypes = DriverModel.listServiceTypes;
   const originalQuery = Database.query;
+  let requestsSql = "";
+  let requestsParams = null;
 
   DriverModel.listServiceTypes = async () => [{
     code: "standard",
@@ -105,24 +112,28 @@ test("zone request details are paginated and exclude private pickup data", async
     isActive: true,
     driverIsActive: true,
   }];
-  Database.query = async () => ({
-    rows: [{
-      zone_id: "11111111-1111-4111-8111-111111111111",
-      zone_name: "Centro",
-      id: "ride-1",
-      status: "pending_driver",
-      service_type: "standard",
-      service_name: "Estándar",
-      service_color: "#2563EB",
-      requested_at: "2026-06-19T12:00:00.000Z",
-      request_age_seconds: 180,
-      distance_from_driver_meters: "2534.7",
-      approximate_pickup_lat: "5.535",
-      approximate_pickup_lng: "-73.367",
-      total_count: 1,
-      pickup_address: "Must not be exposed",
-    }],
-  });
+  Database.query = async (sql, params) => {
+    requestsSql = sql;
+    requestsParams = params;
+    return {
+      rows: [{
+        zone_id: "11111111-1111-4111-8111-111111111111",
+        zone_name: "Centro",
+        id: "ride-1",
+        status: "pending_driver",
+        service_type: "standard",
+        service_name: "Estándar",
+        service_color: "#2563EB",
+        requested_at: "2026-06-19T12:00:00.000Z",
+        request_age_seconds: 180,
+        distance_from_driver_meters: "2534.7",
+        approximate_pickup_lat: "5.535",
+        approximate_pickup_lng: "-73.367",
+        total_count: 1,
+        pickup_address: "Must not be exposed",
+      }],
+    };
+  };
 
   try {
     const result = await DriverHotZonesService.listZoneRequests(
@@ -143,6 +154,16 @@ test("zone request details are paginated and exclude private pickup data", async
       radiusMeters: 250,
     });
     assert.equal(result.requests[0].estimatedFareAmount, undefined);
+    assert.match(requestsSql, /NOT EXISTS[\s\S]+ride_driver_invites/);
+    assert.match(requestsSql, /i\.status = 'rejected'/);
+    assert.deepEqual(requestsParams, [
+      "11111111-1111-4111-8111-111111111111",
+      ["standard"],
+      "standard",
+      20,
+      0,
+      "driver-1",
+    ]);
   } finally {
     DriverModel.listServiceTypes = originalListServiceTypes;
     Database.query = originalQuery;

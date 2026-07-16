@@ -5,6 +5,6 @@ const AdminDriversMapController = require("../controllers/admin-drivers-map.cont
 
 const router = Router();
 
-router.get("/", authorizeRoles("admin"), AdminDriversMapController.getDriversMapSnapshot);
+router.get("/", authorizeRoles("admin", "operator"), AdminDriversMapController.getDriversMapSnapshot);
 
 module.exports = router;

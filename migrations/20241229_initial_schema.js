@@ -10,12 +10,12 @@ exports.up = async function up(knex) {
       .uuid("id")
       .primary()
       .defaultTo(knex.raw("gen_random_uuid()"));
-    table.string("email", 255).notNullable().unique();
+    table.string("email", 255);
     table.string("username", 50).unique();
-    table.string("password_hash", 255).notNullable();
+    table.string("password_hash", 255);
     table.string("first_name", 100);
     table.string("last_name", 100);
-    table.string("phone_number", 30);
+    table.string("phone_number", 16);
     table
       .string("role", 50)
       .notNullable()
@@ -50,6 +50,20 @@ exports.up = async function up(knex) {
     ALTER TABLE users
     ADD CONSTRAINT users_role_check
     CHECK (role IN ('admin', 'client', 'driver'));
+  `);
+
+  await knex.schema.raw(`
+    CREATE UNIQUE INDEX users_email_unique_not_null
+    ON users (LOWER(email))
+    WHERE email IS NOT NULL AND deleted_at IS NULL;
+  `);
+
+  await knex.schema.raw(`
+    CREATE UNIQUE INDEX users_client_phone_unique_not_null
+    ON users (phone_number)
+    WHERE role = 'client'
+      AND phone_number IS NOT NULL
+      AND deleted_at IS NULL;
   `);
 
   await knex.schema.raw(`

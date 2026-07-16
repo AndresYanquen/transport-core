@@ -15,6 +15,12 @@ function createHttpError(status, message) {
   return error;
 }
 
+function sanitizeGoogleMessage(message = "") {
+  const raw = String(message || "").trim();
+  if (!raw) return "";
+  return raw.replace(env.google.mapsApiKey, "[redacted]");
+}
+
 function getGoogleMapsApiKey() {
   if (!env.google.mapsApiKey) {
     throw createHttpError(500, "Google Maps API key is not configured.");
@@ -80,15 +86,21 @@ function assertGoogleStatus(responseData) {
     return;
   }
 
+  const detail = sanitizeGoogleMessage(responseData?.error_message);
+  const suffix = detail ? ` ${detail}` : "";
+
   if (status === "INVALID_REQUEST") {
-    throw createHttpError(400, "Google request was invalid.");
+    throw createHttpError(400, `Google request was invalid.${suffix}`);
   }
 
   if (status === "REQUEST_DENIED") {
-    throw createHttpError(502, "Google request was denied.");
+    throw createHttpError(
+      502,
+      `Google request was denied.${suffix} Check GOOGLE_MAPS_API_KEY restrictions, billing, and that Places API/Geocoding API are enabled.`
+    );
   }
 
-  throw createHttpError(502, "Google Places service is unavailable.");
+  throw createHttpError(502, `Google Places service is unavailable.${suffix}`);
 }
 
 async function googleGet(httpClient, url, options) {
@@ -141,6 +153,25 @@ async function details({ placeId, sessionToken }, { httpClient = axios } = {}) {
   };
 }
 
+async function geocode({ query }, { httpClient = axios } = {}) {
+  const { data } = await googleGet(httpClient, GOOGLE_GEOCODE_URL, {
+    params: {
+      address: query,
+      key: getGoogleMapsApiKey(),
+    },
+  });
+  assertGoogleStatus(data);
+
+  const [firstResult] = data.results || [];
+  if (!firstResult) {
+    throw createHttpError(404, "Address not found.");
+  }
+
+  return {
+    feature: normalizeGeocodeResult(firstResult, { lat: 0, lng: 0 }),
+  };
+}
+
 async function reverseGeocode({ lat, lng }, { httpClient = axios } = {}) {
   const { data } = await googleGet(httpClient, GOOGLE_GEOCODE_URL, {
     params: {
@@ -163,6 +194,7 @@ async function reverseGeocode({ lat, lng }, { httpClient = axios } = {}) {
 module.exports = {
   autocomplete,
   details,
+  geocode,
   reverseGeocode,
   __private: {
     GOOGLE_PLACES_AUTOCOMPLETE_URL,
@@ -172,6 +204,7 @@ module.exports = {
     normalizePlaceResult,
     normalizeGeocodeResult,
     assertGoogleStatus,
+    sanitizeGoogleMessage,
     googleGet,
   },
 };

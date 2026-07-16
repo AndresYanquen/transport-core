@@ -2,6 +2,7 @@ const { Router } = require("express");
 const RideController = require("../controllers/ride.controller");
 const RideMiddleware = require("../middleware/rides.middleware");
 const { authorizeRoles } = require("../../auth/middleware/authentication.middleware");
+const AuthModel = require("../../auth/models/auth.model");
 
 const router = Router();
 const uuidV4LikeRegex =
@@ -11,7 +12,7 @@ function normalizeRole(role = "") {
   return role.toLowerCase();
 }
 
-function ensureClientOwnsRideRequest(req, res, next) {
+async function ensureClientOwnsRideRequest(req, res, next) {
   if (!req.body) {
     req.body = {};
   }
@@ -30,6 +31,49 @@ function ensureClientOwnsRideRequest(req, res, next) {
   } else if (role === "admin") {
     req.body.actorType = "system";
     req.body.actorId = req.user.id;
+  } else if (role === "operator") {
+    req.body.actorType = "support";
+    req.body.actorId = req.user.id;
+    req.body.metadata = {
+      ...(req.body.metadata || {}),
+      createdByOperator: true,
+      operatorId: req.user.id,
+      source: req.body.metadata?.source || "operator_phone_call",
+    };
+
+    if (req.body.clientId) {
+      return next();
+    }
+
+    const passenger = req.body.passenger || {};
+    const phoneNumber = String(passenger.phoneNumber || req.body.passengerPhoneNumber || "").trim();
+    if (!phoneNumber) {
+      return res.status(400).json({
+        message: "clientId or passenger.phoneNumber is required for operator-created rides.",
+      });
+    }
+
+    try {
+      const existingClient = await AuthModel.findClientByPhoneNumber(phoneNumber);
+      const client =
+        existingClient ||
+        (await AuthModel.createPhoneOnlyClient({
+          phoneNumber,
+          firstName: passenger.firstName,
+          lastName: passenger.lastName,
+          createdByOperatorId: req.user.id,
+        }));
+
+      req.body.clientId = client.id;
+      req.body.metadata.passenger = {
+        phoneNumber,
+        firstName: passenger.firstName || null,
+        lastName: passenger.lastName || null,
+        phoneOnlyClientCreated: !existingClient,
+      };
+    } catch (error) {
+      return next(error);
+    }
   }
 
   next();
@@ -75,6 +119,9 @@ function applyActorMetadata(req, _res, next) {
   } else if (role === "admin") {
     req.body.actorType = "system";
     req.body.actorId = req.user.id;
+  } else if (role === "operator") {
+    req.body.actorType = "system";
+    req.body.actorId = req.user.id;
   }
 
   next();
@@ -92,27 +139,45 @@ function ensureValidRideId(req, res, next) {
 
 router.post(
   "/",
-  authorizeRoles("client", "admin"),
+  authorizeRoles("client", "admin", "operator"),
   ensureClientOwnsRideRequest,
   RideMiddleware.createRide,
   RideController.createRide
 );
 router.get(
   "/",
-  authorizeRoles("client", "driver", "admin"),
+  authorizeRoles("client", "driver", "admin", "operator"),
   RideController.listRides
 );
 router.get(
   "/driver-invites",
-  authorizeRoles("driver", "admin"),
+  authorizeRoles("driver", "admin", "operator"),
   RideController.listDriverInvites
+);
+router.get(
+  "/events/recent",
+  authorizeRoles("admin", "operator"),
+  RideController.listRecentRideEvents
 );
 router.patch(
   "/:rideId/assign",
-  authorizeRoles("admin"),
+  authorizeRoles("admin", "operator"),
   ensureValidRideId,
+  applyActorMetadata,
   RideMiddleware.assignDriver,
   RideController.assignDriver
+);
+router.get(
+  "/:rideId/driver-invites",
+  authorizeRoles("admin", "operator"),
+  ensureValidRideId,
+  RideController.listRideDriverInvites
+);
+router.get(
+  "/:rideId/nearby-drivers",
+  authorizeRoles("admin", "operator"),
+  ensureValidRideId,
+  RideController.listNearbyDrivers
 );
 router.patch(
   "/:rideId/driver-response",
@@ -162,7 +227,7 @@ router.patch(
 );
 router.patch(
   "/:rideId/requeue",
-  authorizeRoles("admin"),
+  authorizeRoles("admin", "operator"),
   ensureValidRideId,
   applyActorMetadata,
   RideMiddleware.requeueRide,
@@ -185,7 +250,7 @@ router.post(
 );
 router.get(
   "/:rideId",
-  authorizeRoles("client", "driver", "admin"),
+  authorizeRoles("client", "driver", "admin", "operator"),
   ensureValidRideId,
   RideController.getRide
 );

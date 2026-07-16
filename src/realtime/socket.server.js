@@ -133,6 +133,9 @@ function registerConnectionHandlers(io) {
       connectedAt: new Date().toISOString(),
     });
 
+    const { registerRadioSocketHandlers } = require("../modules/radio/realtime/radio.socket");
+    registerRadioSocketHandlers(io, socket, { userRoom });
+
     socket.on("ride:subscribe", async ({ rideId } = {}) => {
       if (!rideId) {
         return;

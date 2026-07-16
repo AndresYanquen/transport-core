@@ -72,20 +72,38 @@ Responsibility: ride lifecycle, assignment, driver invitations, state transition
 
 | Method | Endpoint | Roles | Responsibility |
 | --- | --- | --- | --- |
-| `POST` | `/api/rides` | `client`, `admin` | Creates a ride request and initial ride event; clients can only create for themselves. |
-| `GET` | `/api/rides` | `client`, `driver`, `admin` | Lists rides visible to the caller. |
-| `GET` | `/api/rides/driver-invites` | `driver`, `admin` | Lists driver invite records, usually pending invites for a driver. |
-| `GET` | `/api/rides/:rideId` | `client`, `driver`, `admin` | Fetches ride details and event history if the caller can view the ride. |
-| `PATCH` | `/api/rides/:rideId/assign` | `admin` | Assigns a selected driver or invites nearby available drivers. |
+| `POST` | `/api/rides` | `client`, `admin`, `operator` | Creates a ride request and initial ride event. Clients can only create for themselves. Admins can create for a provided `clientId`. Operators can create for a provided `clientId` or for a phone-only passenger. |
+| `GET` | `/api/rides` | `client`, `driver`, `admin`, `operator` | Lists rides visible to the caller. |
+| `GET` | `/api/rides/driver-invites` | `driver`, `admin`, `operator` | Lists driver invite records, usually pending invites for a driver. Admins/operators must provide `driverId`. |
+| `GET` | `/api/rides/:rideId/driver-invites` | `admin`, `operator` | Lists all driver invites for one ride, optionally filtered with `statuses=pending,rejected,accepted,expired`. |
+| `GET` | `/api/rides/:rideId/nearby-drivers` | `admin`, `operator` | Lists eligible online drivers near the ride pickup, filtered by recent location, active service type, availability, radius, and limit. |
+| `GET` | `/api/rides/:rideId` | `client`, `driver`, `admin`, `operator` | Fetches ride details and event history if the caller can view the ride. |
+| `PATCH` | `/api/rides/:rideId/assign` | `admin`, `operator` | Assigns a selected driver or invites nearby available drivers. |
 | `PATCH` | `/api/rides/:rideId/driver-response` | `driver` | Lets an invited driver accept or reject a pending ride invite. |
 | `POST` | `/api/rides/:rideId/claim` | `driver` | Atomically claims an available Hot Zones request. The driver must be online, recently present, free of another active ride, and enabled for the service type. On success it returns the assigned ride with exact passenger and pickup details. |
 | `PATCH` | `/api/rides/:rideId/driver-progress` | `driver`, `admin` | Advances driver-owned ride progress states such as en route, arrived, in progress, completed, or driver cancel. |
 | `PATCH` | `/api/rides/:rideId/status` | `client`, `driver`, `admin` | Generic state transition endpoint with actor validation. |
 | `PATCH` | `/api/rides/:rideId/cancel` | `client`, `driver`, `admin` | Cancels a ride according to caller role and allowed state transitions. |
 | `PATCH` | `/api/rides/:rideId/no-show` | `driver`, `admin` | Marks a ride as no-show when the driver has arrived. |
-| `PATCH` | `/api/rides/:rideId/requeue` | `admin` | Moves an assigned ride back to pending driver matching. |
+| `PATCH` | `/api/rides/:rideId/requeue` | `admin`, `operator` | Moves an assigned ride back to pending driver matching. |
 | `PATCH` | `/api/rides/:rideId/system-cancel` | `admin` | Forces a system cancellation. |
 | `POST` | `/api/rides/:rideId/rate` | `client`, `driver` | Creates a post-completion rating for the opposite party. |
+
+Operator-created rides use the same ride creation endpoint and enter the normal
+driver matching flow. If `autoAssign` is not disabled, the backend will create
+the ride and then invite/assign nearby eligible drivers using the existing
+assignment logic. Operator actions are recorded as ride events with
+`actorType: "support"` and `actorId` set to the operator user id. The ride event
+payload includes `createdByOperator`, `operatorId`, `source`, and passenger
+metadata when the request came from a phone call.
+
+When an operator creates a ride without `clientId`, the request must include a
+phone number in `passenger.phoneNumber` or `passengerPhoneNumber`. The backend
+first looks for an existing `client` user with that phone number. If none exists,
+it creates a lightweight phone-only client account, stores
+`profile.phoneOnly = true`, and uses the new user's id as `clientId`. This keeps
+ride history, active-ride checks, reporting, and driver matching consistent even
+when the passenger has not registered in the app.
 
 ### Drivers Module
 
@@ -97,6 +115,28 @@ Responsibility: driver availability, live driver position updates, and driver-si
 | `PATCH` | `/api/drivers/:driverId/status` | `driver`, `admin` | Updates driver availability status; drivers can only update themselves. |
 | `GET` | `/api/drivers/hot-zones` | `driver` | Returns sanitized demand-zone polygons and request metrics for the Flutter driver heat map. It never returns client identities, pickup addresses, exact requests, driver availability counts, or other driver records. |
 | `GET` | `/api/drivers/hot-zones/:zoneId/requests` | `driver` | Returns paginated available requests with service type, request age, distance from the driver, and a server-generated approximate pickup circle. It excludes client identity, pickup address, and exact pickup coordinates. |
+
+### Radio Module
+
+WebRTC audio remains peer-to-peer. The backend stores queue/session metadata and
+relays authenticated signaling only.
+
+| Method | Endpoint | Roles | Responsibility |
+| --- | --- | --- | --- |
+| `POST` | `/api/radio/requests` | `driver` | Creates or returns the driver's existing pending operator-contact request. |
+| `GET` | `/api/radio/requests/mine` | `driver` | Returns the driver's pending request. |
+| `POST` | `/api/radio/requests/:requestId/cancel` | `driver` | Cancels the driver's pending request. |
+| `GET` | `/api/radio/requests` | `operator`, `admin` | Lists the priority/FIFO request queue. |
+| `POST` | `/api/radio/requests/:requestId/accept` | `operator` | Atomically accepts a request and creates a radio session. |
+| `POST` | `/api/radio/requests/:requestId/reject` | `operator` | Rejects a pending request with an optional reason. |
+| `POST` | `/api/radio/sessions` | `operator` | Creates a direct session with a reachable driver. |
+| `GET` | `/api/radio/sessions/:sessionId` | participants, `admin` | Returns session metadata. |
+| `GET` | `/api/radio/ice-config` | `driver`, `operator` | Returns configured STUN/TURN ICE servers. |
+
+Socket.IO signaling events are `radio:offer`, `radio:answer`,
+`radio:ice-candidate`, `radio:connected`, `radio:talk-start`,
+`radio:talk-stop`, `radio:reply-start`, `radio:reply-stop`, `radio:mute`, and
+`radio:end`. SDP and ICE payloads are never persisted.
 
 The driver heat-map summary accepts `serviceType=all|<enabled-code>`. Each zone
 contains `availableRequestsByService` and a total in
@@ -217,6 +257,51 @@ POST /api/rides
 }
 ```
 
+Create ride (operator, existing client):
+
+```json
+POST /api/rides
+Authorization: Bearer <operator-token>
+{
+  "clientId": "<client-user-id>",
+  "pickupAddress": "Calle 19 #10-20, Tunja",
+  "dropoffAddress": "Terminal de Transportes, Tunja",
+  "pickupLocation": { "lat": 5.5329, "lng": -73.3616 },
+  "dropoffLocation": { "lat": 5.5452, "lng": -73.3578 },
+  "serviceType": "standard",
+  "requestDescription": "Servicio tomado por llamada telefónica",
+  "metadata": {
+    "source": "phone_call"
+  }
+}
+```
+
+Create ride (operator, phone-only passenger):
+
+```json
+POST /api/rides
+Authorization: Bearer <operator-token>
+{
+  "passenger": {
+    "phoneNumber": "+573001112233",
+    "firstName": "Carlos",
+    "lastName": "Pérez"
+  },
+  "pickupAddress": "Calle 19 #10-20, Tunja",
+  "dropoffAddress": "Terminal de Transportes, Tunja",
+  "pickupLocation": { "lat": 5.5329, "lng": -73.3616 },
+  "dropoffLocation": { "lat": 5.5452, "lng": -73.3578 },
+  "serviceType": "standard",
+  "requestDescription": "Cliente no registrado; solicitud creada por operadora"
+}
+```
+
+For operator-created rides, `clientId` is optional only when a phone number is
+provided. If no client exists with that phone number, the API creates a
+phone-only client account and then creates the ride. The response is the regular
+ride creation response, including `ride`, initial `event`, and optional
+`assignment`/`assignmentError` depending on driver availability.
+
 For service types in the `delivery` category, the request must include a destination
 and a delivery description:
 
@@ -247,6 +332,18 @@ PATCH /api/rides/<ride-id>/assign
   "driverId": "<driver-user-id>",
   "actorType": "system"
 }
+```
+
+List driver offers for a ride:
+
+```http
+GET /api/rides/<ride-id>/driver-invites?statuses=pending,rejected,accepted,expired
+```
+
+List assignable nearby drivers for a ride:
+
+```http
+GET /api/rides/<ride-id>/nearby-drivers?radiusMeters=5000&limit=10&excludeInvited=true
 ```
 
 Driver responds to assignment:

@@ -3,7 +3,7 @@ import "leaflet/dist/leaflet.css";
 import "../../../components/maps/map-markers.css";
 import L from "leaflet";
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { Car, Check, Clock3, Layers3, LocateFixed, RefreshCw, Search, UserCheck, Wifi, WifiOff } from "lucide-vue-next";
+import { Car, Check, Clock3, Copy, Layers3, LocateFixed, RefreshCw, Search, UserCheck, Wifi, WifiOff, X } from "lucide-vue-next";
 import {
   createDriverMarkerIcon,
   createRequestMarkerIcon,
@@ -25,6 +25,9 @@ const state = reactive({
   zones: [],
   selectedRequestId: null,
   selectedDriverId: null,
+  selectedRequestEvents: [],
+  selectedRequestEventsLoading: false,
+  selectedRequestEventsError: "",
   socketConnected: false,
   lastUpdatedAt: null,
 });
@@ -69,6 +72,14 @@ function formatLastSeen(value) {
   return Number.isNaN(date.getTime()) ? "-" : date.toLocaleString();
 }
 
+function formatEventTime(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "-"
+    : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
 function isAssignable(driver) {
   return driver?.status === "online" && (!driver.lastSeenAt || !isDriverStale(driver));
 }
@@ -89,6 +100,7 @@ function initMap() {
   zoneLayer = L.layerGroup().addTo(map);
   requestLayer = L.layerGroup().addTo(map);
   driverLayer = L.layerGroup().addTo(map);
+  map.on("click", clearSelection);
 }
 
 function renderMap({ fit = false } = {}) {
@@ -134,7 +146,7 @@ function renderMap({ fit = false } = {}) {
         icon: createRequestMarkerIcon(request),
       })
         .bindTooltip(`#${shortMapId(request.id)} · ${escapeMapHtml(request.serviceName)}`)
-        .on("click", () => { state.selectedRequestId = request.id; })
+        .on("click", () => { focusRequest(request); })
         .addTo(requestLayer);
       requestMarkers.set(request.id, marker);
       bounds.push(position);
@@ -193,18 +205,68 @@ async function fetchSnapshot({ fit = false, quiet = false } = {}) {
   }
 }
 
+async function loadRequestHistory(requestId) {
+  state.selectedRequestEvents = [];
+  state.selectedRequestEventsError = "";
+  state.selectedRequestEventsLoading = true;
+  try {
+    const result = await apiRequest(`/api/rides/${requestId}?includeEvents=true&eventsLimit=50`, {
+      method: "GET",
+    });
+    state.selectedRequestEvents = (result?.events || []).slice(-6).reverse();
+  } catch (error) {
+    state.selectedRequestEventsError = error?.message || "No se pudo cargar el historial.";
+  } finally {
+    state.selectedRequestEventsLoading = false;
+  }
+}
+
 function focusRequest(request) {
   state.selectedRequestId = request.id;
   state.selectedDriverId = null;
+  loadRequestHistory(request.id);
   if (!request.pickupLocation) return;
   map?.setView([request.pickupLocation.lat, request.pickupLocation.lng], 17, { animate: true });
   requestMarkers.get(request.id)?.openTooltip();
+}
+
+function clearSelection() {
+  state.selectedRequestId = null;
+  state.selectedDriverId = null;
+  state.selectedRequestEvents = [];
+  state.selectedRequestEventsError = "";
+  state.selectedRequestEventsLoading = false;
+}
+
+async function copyText(value) {
+  const text = String(value || "");
+  if (!text) return;
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand("copy");
+    document.body.removeChild(textarea);
+  } catch (_err) {
+    state.error = "No se pudo copiar el ID de la solicitud.";
+  }
 }
 
 function focusDriver(driver) {
   if (!isAssignable(driver)) return;
   state.selectedDriverId = driver.userId;
   state.selectedRequestId = null;
+  state.selectedRequestEvents = [];
+  state.selectedRequestEventsError = "";
   if (!driver.location) return;
   map?.setView([driver.location.lat, driver.location.lng], 17, { animate: true });
   driverMarkers.get(driver.userId)?.openTooltip();
@@ -243,6 +305,25 @@ function statusLabel(status) {
     driver_arrived: "Conductor llegó",
     in_progress: "En curso",
   }[status] || status;
+}
+
+function statusChipClass(status) {
+  return {
+    requested: "border-sky-200 bg-sky-50 text-sky-700",
+    pending_driver: "border-amber-200 bg-amber-50 text-amber-800",
+    driver_assigned: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    driver_en_route: "border-blue-200 bg-blue-50 text-blue-800",
+    driver_arrived: "border-violet-200 bg-violet-50 text-violet-800",
+    in_progress: "border-slate-300 bg-slate-100 text-slate-800",
+  }[status] || "border-slate-200 bg-white text-slate-600";
+}
+
+function actorLabel(actorType) {
+  return {
+    client: "Cliente",
+    driver: "Conductor",
+    system: "Sistema",
+  }[actorType] || "Operación";
 }
 
 watch(() => [filters.status, filters.search], () => renderMap());
@@ -325,7 +406,23 @@ onBeforeUnmount(() => {
               type="button"
               @click="focusRequest(request)"
             >
-              <div class="flex justify-between gap-2"><strong>#{{ shortMapId(request.id) }}</strong><span class="text-xs text-slate-500">{{ statusLabel(request.status) }}</span></div>
+              <div class="flex items-start justify-between gap-2">
+                <span class="flex min-w-0 items-center gap-1">
+                  <strong class="pt-0.5">#{{ shortMapId(request.id) }}</strong>
+                  <button
+                    class="grid h-6 w-6 place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-900"
+                    type="button"
+                    title="Copiar ID de solicitud"
+                    aria-label="Copiar ID de solicitud"
+                    @click.stop="copyText(request.id)"
+                  >
+                    <Copy class="h-3.5 w-3.5" />
+                  </button>
+                </span>
+                <span :class="['inline-flex max-w-[160px] shrink-0 items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold leading-5', statusChipClass(request.status)]">
+                  {{ statusLabel(request.status) }}
+                </span>
+              </div>
               <div class="mt-1 truncate text-sm">{{ request.pickupAddress }}</div>
               <div class="mt-1 text-xs text-slate-500">{{ request.clientName }} · {{ request.serviceName }}</div>
             </button>
@@ -381,11 +478,60 @@ onBeforeUnmount(() => {
             Conductores disponibles
           </button>
         </div>
-        <div v-if="selectedRequest" class="absolute bottom-4 left-4 z-[500] max-w-sm rounded-lg border border-white/70 bg-white/95 p-4 shadow-xl">
-          <p class="text-xs font-medium uppercase text-emerald-700">Solicitud seleccionada</p>
-          <h2 class="mt-1 font-semibold">#{{ shortMapId(selectedRequest.id) }}</h2>
-          <p class="mt-2 text-sm">{{ selectedRequest.pickupAddress }}</p>
-          <p class="mt-1 text-xs text-slate-500">{{ selectedRequest.clientName }} · {{ statusLabel(selectedRequest.status) }}</p>
+        <div v-if="selectedRequest" class="absolute bottom-4 left-4 z-[500] max-h-[calc(100%-2rem)] w-[380px] max-w-[calc(100%-2rem)] overflow-hidden rounded-lg border border-white/70 bg-white/95 shadow-xl" @click.stop>
+          <div class="border-b border-slate-100 p-4">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <p class="text-xs font-medium uppercase text-emerald-700">Solicitud seleccionada</p>
+                <div class="mt-1 flex items-center gap-1">
+                  <h2 class="font-semibold">#{{ shortMapId(selectedRequest.id) }}</h2>
+                  <button
+                    class="grid h-6 w-6 place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-900"
+                    type="button"
+                    title="Copiar ID de solicitud"
+                    aria-label="Copiar ID de solicitud"
+                    @click="copyText(selectedRequest.id)"
+                  >
+                    <Copy class="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+              <div class="flex shrink-0 items-center gap-2">
+                <span :class="['inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold leading-5', statusChipClass(selectedRequest.status)]">
+                  {{ statusLabel(selectedRequest.status) }}
+                </span>
+                <button class="grid h-7 w-7 place-items-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900" type="button" aria-label="Cerrar historial" @click="clearSelection">
+                  <X class="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            <p class="mt-2 text-sm">{{ selectedRequest.pickupAddress }}</p>
+            <p class="mt-1 text-xs text-slate-500">{{ selectedRequest.clientName }} · {{ selectedRequest.serviceName }}</p>
+          </div>
+
+          <div class="max-h-64 overflow-y-auto p-4">
+            <div class="mb-3 flex items-center justify-between">
+              <p class="text-xs font-semibold uppercase text-slate-500">Últimos estados</p>
+              <button class="text-xs font-medium text-emerald-700 hover:text-emerald-900" type="button" @click="loadRequestHistory(selectedRequest.id)">
+                Actualizar
+              </button>
+            </div>
+            <p v-if="state.selectedRequestEventsLoading" class="text-sm text-slate-500">Cargando historial...</p>
+            <p v-else-if="state.selectedRequestEventsError" class="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{{ state.selectedRequestEventsError }}</p>
+            <ol v-else-if="state.selectedRequestEvents.length" class="space-y-3">
+              <li v-for="event in state.selectedRequestEvents" :key="event.id" class="grid grid-cols-[64px_1fr] gap-3">
+                <time class="pt-0.5 text-xs text-slate-500">{{ formatEventTime(event.occurredAt || event.createdAt) }}</time>
+                <div class="relative border-l border-slate-200 pl-3">
+                  <span class="absolute -left-[5px] top-2 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
+                  <span :class="['inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold leading-5', statusChipClass(event.status)]">
+                    {{ statusLabel(event.status) }}
+                  </span>
+                  <p class="mt-1 text-xs text-slate-500">{{ actorLabel(event.actorType) }}</p>
+                </div>
+              </li>
+            </ol>
+            <p v-else class="text-sm text-slate-500">No hay historial registrado para este servicio.</p>
+          </div>
         </div>
         <div v-else-if="selectedDriver" class="absolute bottom-4 left-4 z-[500] max-w-sm rounded-lg border border-white/70 bg-white/95 p-4 shadow-xl">
           <p class="text-xs font-medium uppercase text-emerald-700">Conductor seleccionado</p>

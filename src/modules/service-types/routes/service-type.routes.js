@@ -8,7 +8,7 @@ const router = Router();
 
 router.get(
   "/",
-  authorizeRoles("client", "driver", "admin"),
+  authorizeRoles("client", "driver", "admin", "operator"),
   ServiceTypeMiddleware.validateListQuery,
   ServiceTypeController.listServiceTypes
 );
@@ -22,7 +22,7 @@ router.post(
 
 router.get(
   "/:code",
-  authorizeRoles("client", "driver", "admin"),
+  authorizeRoles("client", "driver", "admin", "operator"),
   ServiceTypeMiddleware.validateCodeParam,
   ServiceTypeController.getServiceType
 );

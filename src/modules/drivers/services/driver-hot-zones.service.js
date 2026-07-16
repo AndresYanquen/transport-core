@@ -61,6 +61,7 @@ async function getSnapshot(driverId, filters = {}) {
       `
     ),
     listAvailableRequestCountsByZone({
+      driverId,
       enabledServiceTypeCodes: [...enabledCodes],
       serviceType: requestedServiceType,
     }),
@@ -109,6 +110,7 @@ async function getEnabledServiceTypes(driverId) {
 }
 
 async function listAvailableRequestCountsByZone({
+  driverId,
   enabledServiceTypeCodes,
   serviceType = "all",
 }) {
@@ -132,10 +134,17 @@ async function listAvailableRequestCountsByZone({
         AND r.driver_id IS NULL
         AND r.service_type = ANY($1::text[])
         AND ($2 = 'all' OR r.service_type = $2)
+        AND NOT EXISTS (
+          SELECT 1
+          FROM ride_driver_invites i
+          WHERE i.ride_id = r.id
+            AND i.driver_id = $3
+            AND i.status = 'rejected'
+        )
       GROUP BY z.id, r.service_type, st.name, st.color, st.sort_order
       ORDER BY z.id, st.sort_order ASC, st.name ASC
     `,
-    [enabledServiceTypeCodes, serviceType]
+    [enabledServiceTypeCodes, serviceType, driverId]
   );
 
   const counts = new Map();
@@ -212,6 +221,13 @@ async function listZoneRequests(driverId, zoneId, filters = {}) {
         AND r.driver_id IS NULL
         AND r.service_type = ANY($2::text[])
         AND ($3 = 'all' OR r.service_type = $3)
+        AND NOT EXISTS (
+          SELECT 1
+          FROM ride_driver_invites i
+          WHERE i.ride_id = r.id
+            AND i.driver_id = $6
+            AND i.status = 'rejected'
+        )
       ORDER BY r.requested_at ASC, r.id ASC
       LIMIT $4 OFFSET $5
     `,

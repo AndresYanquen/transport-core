@@ -407,6 +407,22 @@ class RideModel {
     return rows;
   }
 
+  static async listRecentRideEvents({ limit = 50, offset = 0 } = {}, dbClient) {
+    const executor = getExecutor(dbClient);
+    const { rows } = await executor.query(
+      `
+        SELECT ${BASE_EVENT_FIELDS}
+        FROM ride_events
+        ORDER BY occurred_at DESC, created_at DESC
+        LIMIT $1
+        OFFSET $2
+      `,
+      [limit, offset]
+    );
+
+    return rows;
+  }
+
   static async updateRide(dbClient, rideId, { fields = {}, expressions = [] } = {}) {
     const executor = getExecutor(dbClient);
     const assignments = [];

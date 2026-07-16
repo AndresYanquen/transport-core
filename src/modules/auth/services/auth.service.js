@@ -4,6 +4,7 @@ const crypto = require("crypto");
 const AuthModel = require("../models/auth.model");
 const { env } = require("../../../config");
 const { signJwt } = require("../utils/jwt");
+const { normalizePhoneNumber } = require("../utils/phone");
 
 const PASSWORD_SALT_ROUNDS = 12;
 const VERIFICATION_TOKEN_BYTES = 32;
@@ -103,7 +104,8 @@ async function registerUser({
 
   const passwordHash = await bcrypt.hash(password, PASSWORD_SALT_ROUNDS);
   const emailVerificationToken = generateToken(VERIFICATION_TOKEN_BYTES);
-  const phoneVerificationToken = phoneNumber
+  const normalizedPhoneNumber = phoneNumber ? normalizePhoneNumber(phoneNumber) : null;
+  const phoneVerificationToken = normalizedPhoneNumber
     ? generateToken(VERIFICATION_TOKEN_BYTES)
     : null;
 
@@ -134,7 +136,7 @@ async function registerUser({
     passwordHash,
     firstName,
     lastName,
-    phoneNumber,
+    phoneNumber: normalizedPhoneNumber,
     accountType: normalizedAccountType,
     emailVerificationToken: hashToken(emailVerificationToken),
     emailVerificationSentAt: createdAt,
@@ -162,7 +164,7 @@ async function registerUser({
 async function loginUser({ email, password, rememberMe = false }) {
   const userRow = await AuthModel.findByEmail(email);
 
-  if (!userRow) {
+  if (!userRow || !userRow.password_hash) {
     const error = new Error("Contraseña o correo inválidos.");
     error.status = 401;
     throw error;
