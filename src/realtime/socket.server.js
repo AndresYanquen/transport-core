@@ -199,6 +199,25 @@ function getSocketServer() {
   return ioInstance;
 }
 
+function closeSocketServer() {
+  return new Promise((resolve, reject) => {
+    if (!ioInstance) {
+      resolve();
+      return;
+    }
+
+    ioInstance.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      ioInstance = null;
+      resolve();
+    });
+  });
+}
+
 function emitToRide(rideId, eventName, payload) {
   if (!ioInstance || !rideId || !eventName) {
     return;
@@ -234,6 +253,7 @@ function removeUserFromRideRoom(userId, rideId) {
 module.exports = {
   initializeSocketServer,
   getSocketServer,
+  closeSocketServer,
   emitToRide,
   emitToUser,
   emitToRole,

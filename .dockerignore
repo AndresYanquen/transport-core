@@ -1,0 +1,10 @@
+.DS_Store
+.env
+.git
+.gitignore
+client
+coverage
+node_modules
+npm-debug.log
+simulator
+tests

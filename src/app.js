@@ -1,9 +1,14 @@
 const express = require("express");
 const cors = require("cors");
+const compression = require("compression");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 
 const { pool } = require("./config/database");
 const { env } = require("./config");
 const { corsOptions } = require("./config/cors");
+const { logger } = require("./config/logger");
+const { requestLogger } = require("./middleware/request-logger.middleware");
 const authRoutes = require("./modules/auth/routes/auth.routes");
 const rideRoutes = require("./modules/rides/routes/ride.routes");
 const driverRoutes = require("./modules/drivers/routes/driver.routes");
@@ -25,10 +30,25 @@ const { authenticate } = require("./modules/auth/middleware/authentication.middl
 
 const app = express();
 
+app.disable("x-powered-by");
+app.set("trust proxy", env.http.trustProxy);
+app.use(helmet());
 app.use(cors(corsOptions));
-app.use(express.json());
+app.use(compression());
+app.use(express.json({ limit: env.http.jsonBodyLimit }));
+app.use(requestLogger);
 
-app.use("/api/auth", authRoutes);
+const authRateLimiter = rateLimit({
+  windowMs: env.http.authRateLimitWindowMs,
+  limit: env.http.authRateLimitMax,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    message: "Too many authentication attempts. Please try again later.",
+  },
+});
+
+app.use("/api/auth", authRateLimiter, authRoutes);
 app.use("/api/rides", authenticate, rideRoutes);
 app.use("/api/drivers", authenticate, driverRoutes);
 app.use("/api/places", authenticate, placesRoutes);
@@ -52,7 +72,15 @@ if (String(env.nodeEnv || "").toLowerCase() === "production") {
   app.use("/api/admin/simulation", adminSimulationRoutes);
 }
 
-app.get("/api/health", async (_req, res) => {
+app.get("/api/live", (_req, res) => {
+  res.status(200).json({
+    status: "ok",
+    env: env.nodeEnv,
+    uptimeSeconds: Math.round(process.uptime()),
+  });
+});
+
+app.get(["/api/ready", "/api/health"], async (_req, res) => {
   try {
     await pool.query("SELECT 1");
     res.status(200).json({
@@ -61,7 +89,7 @@ app.get("/api/health", async (_req, res) => {
       env: env.nodeEnv,
     });
   } catch (error) {
-    console.error("Health check database probe failed:", error);
+    logger.error("readiness_check_failed", { error });
     res.status(503).json({
       status: "error",
       db: "unreachable",
@@ -70,15 +98,6 @@ app.get("/api/health", async (_req, res) => {
   }
 });
 
-(async () => {
-  try {
-    await pool.query("SELECT 1");
-    console.log("Connected to PostgreSQL database successfully.");
-  } catch (error) {
-    console.error("Failed to connect to PostgreSQL database:", error);
-  }
-})();
-
 app.use((req, res) => {
   res.status(404).json({
     message: `Route ${req.originalUrl} not found`,
@@ -86,9 +105,10 @@ app.use((req, res) => {
 });
 
 app.use((err, _req, res, _next) => {
-  console.error(err);
+  logger.error("unhandled_request_error", { error: err });
+  const isProduction = String(env.nodeEnv || "").toLowerCase() === "production";
   res.status(err.status || 500).json({
-    message: err.message || "Internal server error",
+    message: isProduction && !err.status ? "Internal server error" : err.message || "Internal server error",
   });
 });
 

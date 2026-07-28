@@ -113,6 +113,20 @@ const env = {
     ),
     allowLocalhostTemporarily: allowLocalhostCorsTemporarily,
   },
+  http: {
+    trustProxy: parseNumber(process.env.HTTP_TRUST_PROXY, 1),
+    jsonBodyLimit: process.env.HTTP_JSON_BODY_LIMIT || "1mb",
+    requestLogsEnabled: parseBoolean(process.env.HTTP_REQUEST_LOGS_ENABLED, true),
+    authRateLimitWindowMs: parseNumber(
+      process.env.AUTH_RATE_LIMIT_WINDOW_MS,
+      15 * 60 * 1000
+    ),
+    authRateLimitMax: parseNumber(process.env.AUTH_RATE_LIMIT_MAX, 100),
+    shutdownTimeoutMs: parseNumber(process.env.SHUTDOWN_TIMEOUT_MS, 10000),
+  },
+  logging: {
+    level: process.env.LOG_LEVEL || "info",
+  },
   security: {
     jwtSecret: process.env.JWT_SECRET || "dev-insecure-jwt-secret",
     jwtExpiresInSeconds: parseNumber(process.env.JWT_ACCESS_TTL_SECONDS, 3600),

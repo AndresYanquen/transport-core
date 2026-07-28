@@ -26,9 +26,88 @@ Seed data creates an admin plus sample client (`client@example.com`) and driver 
 
 The server listens on `http://localhost:3000` by default. Update `.env` to point at your PostgreSQL instance; the template is preconfigured for a local database on `localhost:5432` with user `andresyanquen` and password `12345`.
 
+## Environment Variables
+
+Copy `.env.example` to `.env` for local development. In production, `JWT_SECRET`, database settings, and `CORS_ALLOWED_ORIGINS` are required; startup fails if they are missing.
+
+| Variable | Default/example | Description |
+| --- | --- | --- |
+| `NODE_ENV` | `development` | Runtime environment. Use `production` in deployed environments. |
+| `PORT` | `3000` | HTTP port used by `src/server.js`. |
+| `DB_HOST` | `localhost` | PostgreSQL host. Required in production. |
+| `DB_PORT` | `5432` | PostgreSQL port. |
+| `DB_NAME` | `postgres` | PostgreSQL database name. Required in production. |
+| `DB_USER` | `postgres` | PostgreSQL user. Required in production. |
+| `DB_PASSWORD` | `change-me` | PostgreSQL password. Required in production. |
+| `DB_SSL` | `false` | Enables SSL for PostgreSQL connections. |
+| `DB_SSL_REJECT_UNAUTHORIZED` | `false` | Controls PostgreSQL SSL certificate verification. Use `true` when your provider supports trusted certificates. |
+| `DB_CONNECTION_TIMEOUT_MS` | `5000` | Maximum time to wait when opening a PostgreSQL connection. |
+| `DB_IDLE_TIMEOUT_MS` | `30000` | Time before idle PostgreSQL pool clients are closed. |
+| `DB_POOL_MAX` | `10` | Maximum PostgreSQL connections per API process. Reduce this when running multiple instances. |
+| `JWT_SECRET` | `change-me-in-production` | JWT signing secret. Required in production and must not use the development fallback. |
+| `JWT_ACCESS_TTL_SECONDS` | `3600` | Access token lifetime in seconds. |
+| `JWT_REMEMBER_ME_TTL_SECONDS` | `2592000` | Longer token lifetime for remember-me sessions. |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:3001,http://localhost:5173` | Comma-separated browser origins allowed to call the API. Required in production. Do not use `*` in production. |
+| `CORS_ALLOW_LOCALHOST_TEMP` | `false` | Temporarily allows localhost origins in production when set to a truthy value. Keep disabled for normal production. |
+| `LOG_LEVEL` | `info` | Minimum log level. Supported values: `debug`, `info`, `warn`, `error`, `silent`. |
+| `HTTP_TRUST_PROXY` | `1` | Express `trust proxy` setting. Use `1` behind one load balancer/proxy. |
+| `HTTP_JSON_BODY_LIMIT` | `1mb` | Maximum JSON request body size accepted by Express. |
+| `HTTP_REQUEST_LOGS_ENABLED` | `true` | Enables one structured log line per HTTP request. Set to `false` to disable request access logs. |
+| `AUTH_RATE_LIMIT_WINDOW_MS` | `900000` | Rate-limit window for `/api/auth` requests, in milliseconds. |
+| `AUTH_RATE_LIMIT_MAX` | `100` | Maximum `/api/auth` requests per rate-limit window per client. |
+| `SHUTDOWN_TIMEOUT_MS` | `10000` | Graceful shutdown timeout before forcing process exit. |
+| `SOCKET_ENABLED` | `true` | Enables Socket.IO realtime server. |
+| `SOCKET_PATH` | `/socket.io` | Socket.IO endpoint path. |
+| `REDIS_URL` | `redis://localhost:6379` | Redis connection URL reserved for horizontal scaling features such as Socket.IO adapter, distributed rate limiting, locks, and queues. |
+| `DRIVER_PRESENCE_STALE_SECONDS` | `90` | Age after which online driver presence is considered stale. |
+| `DRIVER_PRESENCE_SWEEP_SECONDS` | `30` | Interval for sweeping stale driver presence records. |
+| `RADIO_REQUEST_TTL_SECONDS` | `180` | Time before pending radio requests expire. |
+| `RADIO_CONNECT_TIMEOUT_SECONDS` | `15` | Time allowed for radio sessions to connect. |
+| `RADIO_IDLE_TIMEOUT_SECONDS` | `45` | Idle timeout for radio sessions. |
+| `RADIO_SWEEP_INTERVAL_SECONDS` | `5` | Interval for radio timeout cleanup. |
+| `WEBRTC_STUN_URLS` | `stun:stun.l.google.com:19302` | Comma-separated STUN URLs returned by `/api/radio/ice-config`. |
+| `WEBRTC_TURN_URL` | empty | TURN server URL for WebRTC when available. |
+| `WEBRTC_TURN_USERNAME` | empty | TURN username. |
+| `WEBRTC_TURN_CREDENTIAL` | empty | TURN credential/password. |
+| `GOOGLE_MAPS_API_KEY` | empty | Google Maps API key used by the places module. |
+
 ## Project Structure
 
 ```
+
+## Docker
+
+Build and run the backend image:
+
+```bash
+docker build -t taxi-backend .
+docker run --env-file .env -e DB_HOST=host.docker.internal -p 3000:3000 taxi-backend
+```
+
+Build and run the administrative frontend image:
+
+```bash
+docker build -t taxi-admin-client ./client
+docker run -p 8080:80 taxi-admin-client
+```
+
+The default frontend image is built with `VITE_API_BASE_URL=http://localhost:3000`, so the browser calls the backend exposed on port `3000`. Override it at build time when deploying behind another API URL:
+
+```bash
+docker build \
+  --build-arg VITE_API_BASE_URL=https://api.example.com \
+  --build-arg VITE_SOCKET_PATH=/socket.io \
+  -t taxi-admin-client \
+  ./client
+```
+
+To run both containers locally with the existing local PostgreSQL instance:
+
+```bash
+docker compose up --build
+```
+
+Backend: `http://localhost:3000`. Admin frontend: `http://localhost:8080`.
 src/
   app.js             # Express app configuration, middleware, and route mounting
   server.js          # HTTP server bootstrap

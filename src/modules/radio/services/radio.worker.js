@@ -18,4 +18,10 @@ function startRadioWorker() {
   timer.unref();
 }
 
-module.exports = { startRadioWorker, sweep };
+function stopRadioWorker() {
+  if (!timer) return;
+  clearInterval(timer);
+  timer = null;
+}
+
+module.exports = { startRadioWorker, stopRadioWorker, sweep };
