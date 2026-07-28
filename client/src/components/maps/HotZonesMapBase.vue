@@ -16,6 +16,7 @@ import { useRouter } from "vue-router";
 import { apiRequest } from "../../services/api.js";
 import { createRealtimeSocket } from "../../services/realtime.js";
 import { useAuthStore } from "../../stores/auth.js";
+import { useOperationalSettings } from "../../stores/operationalSettings.js";
 import {
   createDriverMarkerIcon,
   createRequestMarkerIcon,
@@ -28,6 +29,7 @@ const mapEl = ref(null);
 const requestsPanelEl = ref(null);
 const router = useRouter();
 const auth = useAuthStore();
+const operationalSettings = useOperationalSettings();
 const state = reactive({
   loading: true,
   error: "",
@@ -98,7 +100,8 @@ const averageWait = computed(() => {
 
 function initMap() {
   if (!mapEl.value || map) return;
-  map = L.map(mapEl.value, { zoomControl: true }).setView([5.535, -73.367], 13);
+  const center = operationalSettings.mapCenter.value;
+  map = L.map(mapEl.value, { zoomControl: true }).setView([center.lat, center.lng], operationalSettings.mapDefaultZoom.value);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "&copy; OpenStreetMap", maxZoom: 19,
   }).addTo(map);
@@ -367,6 +370,7 @@ async function copyText(value) {
 watch(() => [filters.period, filters.status, filters.serviceType], () => fetchSnapshot());
 
 onMounted(async () => {
+  await operationalSettings.fetchOperationalSettings();
   await nextTick();
   initMap();
   await fetchSnapshot({ fit: true });

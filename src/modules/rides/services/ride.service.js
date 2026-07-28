@@ -337,9 +337,10 @@ function normalizeActorType(actorType, fallback = RideActorType.SYSTEM) {
   return normalized;
 }
 
-function normalizeCurrency(currency) {
+async function normalizeCurrency(currency) {
   if (!currency) {
-    return "USD";
+    const settings = await SettingsService.getOperationalSettings();
+    return settings.defaultCurrency;
   }
 
   return currency.trim().toUpperCase();
@@ -804,7 +805,7 @@ async function createRide({
       estimatedDurationSeconds,
       estimatedFareAmount,
       surgeMultiplier,
-      currency: normalizeCurrency(currency),
+      currency: await normalizeCurrency(currency),
       paymentReference,
       pricingBreakdown,
       scheduledAt,

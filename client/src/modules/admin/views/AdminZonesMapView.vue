@@ -5,8 +5,10 @@ import L from "leaflet";
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { Edit3, Info, MapPinned, MousePointer2, RefreshCw, Save, Trash2, Undo2, X } from "lucide-vue-next";
 import { apiRequest } from "../../../services/api.js";
+import { useOperationalSettings } from "../../../stores/operationalSettings.js";
 
 const mapEl = ref(null);
+const operationalSettings = useOperationalSettings();
 const state = reactive({
   loading: true,
   saving: false,
@@ -60,9 +62,10 @@ async function fetchZones() {
 function initMap() {
   if (!mapEl.value || map) return;
 
+  const center = operationalSettings.mapCenter.value;
   map = L.map(mapEl.value, {
     zoomControl: true,
-  }).setView([5.535, -73.367], 13);
+  }).setView([center.lat, center.lng], operationalSettings.mapDefaultZoom.value);
 
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "&copy; OpenStreetMap",
@@ -308,6 +311,7 @@ watch(
 );
 
 onMounted(async () => {
+  await operationalSettings.fetchOperationalSettings();
   await nextTick();
   initMap();
   await fetchZones();

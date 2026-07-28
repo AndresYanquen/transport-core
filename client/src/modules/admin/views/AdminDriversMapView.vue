@@ -8,9 +8,11 @@ import { apiRequest } from "../../../services/api.js";
 import { createRealtimeSocket } from "../../../services/realtime.js";
 import { useAuthStore } from "../../../stores/auth.js";
 import { driverPresenceClass, driverPresenceKey, driverPresenceLabel, isDriverStale, offlineReasonLabel } from "../../../lib/driverPresence.js";
+import { useOperationalSettings } from "../../../stores/operationalSettings.js";
 
 const mapEl = ref(null);
 const auth = useAuthStore();
+const operationalSettings = useOperationalSettings();
 
 const state = reactive({
   loading: true,
@@ -99,9 +101,10 @@ function formatVehicle(driver) {
 function initMap() {
   if (!mapEl.value || map) return;
 
+  const center = operationalSettings.mapCenter.value;
   map = L.map(mapEl.value, {
     zoomControl: true,
-  }).setView([5.535, -73.367], 13);
+  }).setView([center.lat, center.lng], operationalSettings.mapDefaultZoom.value);
 
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "&copy; OpenStreetMap",
@@ -274,6 +277,7 @@ function setSearch(value) {
 }
 
 onMounted(async () => {
+  await operationalSettings.fetchOperationalSettings();
   await nextTick();
   initMap();
   await fetchSnapshot({ fit: true });

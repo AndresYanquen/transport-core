@@ -8,10 +8,12 @@ import { driverPresenceClass, driverPresenceKey, driverPresenceLabel, offlineRea
 import { apiRequest } from "../../../services/api.js";
 import { createRealtimeSocket } from "../../../services/realtime.js";
 import { useAuthStore } from "../../../stores/auth.js";
+import { useOperationalSettings } from "../../../stores/operationalSettings.js";
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
+const operationalSettings = useOperationalSettings();
 
 const tabs = [
   { key: "available", slug: "available", label: "Disponibles" },
@@ -47,7 +49,6 @@ let refreshTimer = null;
 const mapEl = ref(null);
 let driversMap = null;
 let driverMarkers = [];
-const tunjaCenter = { lat: 5.5353, lng: -73.3678 };
 
 function resolveRouteTab() {
   const param = Array.isArray(route.params.driverView) ? route.params.driverView[0] : route.params.driverView;
@@ -215,7 +216,8 @@ function isValidLocation(location) {
 
 function initMap() {
   if (!mapEl.value || driversMap) return;
-  driversMap = L.map(mapEl.value, { zoomControl: false }).setView([tunjaCenter.lat, tunjaCenter.lng], 13);
+  const center = operationalSettings.mapCenter.value;
+  driversMap = L.map(mapEl.value, { zoomControl: false }).setView([center.lat, center.lng], operationalSettings.mapDefaultZoom.value);
   L.control.zoom({ position: "topright" }).addTo(driversMap);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "&copy; OpenStreetMap",
@@ -273,7 +275,8 @@ function updateMap() {
     } else if (bounds.length === 1) {
       driversMap.setView(bounds[0], 14);
     } else {
-      driversMap.setView([tunjaCenter.lat, tunjaCenter.lng], 13);
+      const center = operationalSettings.mapCenter.value;
+      driversMap.setView([center.lat, center.lng], operationalSettings.mapDefaultZoom.value);
     }
 
     driversMap.invalidateSize();
@@ -288,6 +291,7 @@ function selectDriver(driver) {
 
 onMounted(async () => {
   filters.tab = resolveRouteTab();
+  await operationalSettings.fetchOperationalSettings();
   await fetchDrivers();
   await nextTick();
   updateMap();

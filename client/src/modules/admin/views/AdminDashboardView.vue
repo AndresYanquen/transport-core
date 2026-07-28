@@ -13,6 +13,9 @@ import {
 import { computed, onMounted, reactive } from "vue";
 import { RouterLink } from "vue-router";
 import { apiRequest } from "../../../services/api.js";
+import { useOperationalSettings } from "../../../stores/operationalSettings.js";
+
+const operationalSettings = useOperationalSettings();
 
 const state = reactive({
   loading: true,
@@ -115,12 +118,7 @@ function fmtMs(ms) {
 }
 
 function fmtCurrency(value) {
-  const n = Number(value || 0);
-  return new Intl.NumberFormat("es-CO", {
-    style: "currency",
-    currency: "COP",
-    maximumFractionDigits: 0,
-  }).format(n);
+  return operationalSettings.formatCurrency(value);
 }
 
 function fmtTime(value) {
@@ -294,7 +292,10 @@ function projectMapPoints(points) {
   }));
 }
 
-onMounted(fetchDashboard);
+onMounted(async () => {
+  await operationalSettings.fetchOperationalSettings();
+  fetchDashboard();
+});
 </script>
 
 <template>

@@ -1,13 +1,11 @@
 const SettingsModel = require("../../settings/models/settings.model");
 const SettingsService = require("../../settings/services/settings.service");
 const { allowedKeys } = require("../middleware/admin-operational-parameters.middleware");
+const { settingDefinitions } = require("../../settings/settings.definitions");
 
-const descriptions = {
-  client_driver_search_radius_meters:
-    "Distance in meters used when searching available drivers near a client pickup location.",
-  driver_request_search_radius_meters:
-    "Distance in meters used when searching pending ride requests near a driver.",
-};
+const descriptions = Object.fromEntries(
+  Object.entries(settingDefinitions).map(([key, definition]) => [key, definition.description])
+);
 
 async function listParameters() {
   const settings = await SettingsService.getSettings(allowedKeys, { ttlMs: 0 });

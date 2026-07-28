@@ -21,10 +21,12 @@ import {
 import { apiRequest } from "../../../services/api.js";
 import { createRealtimeSocket } from "../../../services/realtime.js";
 import { useAuthStore } from "../../../stores/auth.js";
+import { useOperationalSettings } from "../../../stores/operationalSettings.js";
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
+const operationalSettings = useOperationalSettings();
 
 const tabs = [
   { key: "assign", slug: "assign-driver", label: "Asignar Conductor" },
@@ -43,7 +45,6 @@ const tabAliases = {
 const assignableStatuses = ["requested", "pending_driver"];
 const reassignableStatuses = ["driver_assigned", "driver_en_route", "driver_arrived"];
 const noResponseInviteStatuses = ["pending", "rejected", "expired"];
-const tunjaCenter = { lat: 5.5353, lng: -73.3678 };
 
 const statusMeta = {
   requested: { label: "Solicitada", class: "border-sky-200 bg-sky-50 text-sky-700" },
@@ -421,7 +422,8 @@ async function reofferRide(ride) {
 
 function initMap() {
   if (!mapEl.value || assignmentMap) return;
-  assignmentMap = L.map(mapEl.value, { zoomControl: false }).setView([tunjaCenter.lat, tunjaCenter.lng], 14);
+  const center = operationalSettings.mapCenter.value;
+  assignmentMap = L.map(mapEl.value, { zoomControl: false }).setView([center.lat, center.lng], 14);
   L.control.zoom({ position: "topright" }).addTo(assignmentMap);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "&copy; OpenStreetMap",
@@ -511,7 +513,8 @@ function updateMap() {
     } else if (bounds.length === 1) {
       assignmentMap.setView(bounds[0], 14);
     } else {
-      assignmentMap.setView([tunjaCenter.lat, tunjaCenter.lng], 14);
+      const center = operationalSettings.mapCenter.value;
+      assignmentMap.setView([center.lat, center.lng], 14);
     }
 
     assignmentMap.invalidateSize();
@@ -548,6 +551,7 @@ watch(selectedRide, () => updateMap());
 
 onMounted(async () => {
   filters.tab = resolveRouteTab();
+  await operationalSettings.fetchOperationalSettings();
   await fetchAssignments();
   await nextTick();
   updateMap();

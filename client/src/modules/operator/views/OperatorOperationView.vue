@@ -7,10 +7,12 @@ import { AlertTriangle, Car, CheckCircle2, Clock3, Copy, LocateFixed, MapPin, Pl
 import { apiRequest } from "../../../services/api.js";
 import { createRealtimeSocket } from "../../../services/realtime.js";
 import { useAuthStore } from "../../../stores/auth.js";
+import { useOperationalSettings } from "../../../stores/operationalSettings.js";
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
+const operationalSettings = useOperationalSettings();
 
 const tabs = [
   { key: "overview", slug: "", label: "Vista general" },
@@ -28,7 +30,6 @@ const pendingStatuses = ["requested", "pending_driver"];
 const assignedStatuses = ["driver_assigned", "driver_en_route", "driver_arrived"];
 const inProgressStatuses = ["in_progress"];
 const canceledStatuses = ["canceled_by_client", "canceled_by_driver", "canceled_by_system", "no_show"];
-const tunjaCenter = { lat: 5.5353, lng: -73.3678 };
 
 const statusLabels = {
   requested: "Solicitada",
@@ -82,11 +83,6 @@ const form = reactive({
 function createPlaceSessionToken() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
   return `place-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-function formatTunjaQuery(query) {
-  const value = String(query || "").trim();
-  return /tunja/i.test(value) ? value : `${value}, Tunja, Boyaca, Colombia`;
 }
 
 const placeState = reactive({
@@ -292,10 +288,10 @@ async function fetchPlaceSuggestions(kind) {
   picker.loading = true;
   try {
     const params = new URLSearchParams({
-      query: formatTunjaQuery(query),
+      query: operationalSettings.formatLocalPlaceQuery(query),
       sessionToken: picker.sessionToken,
-      lat: String(tunjaCenter.lat),
-      lng: String(tunjaCenter.lng),
+      lat: String(operationalSettings.mapCenter.value.lat),
+      lng: String(operationalSettings.mapCenter.value.lng),
     });
     const data = await apiRequest(`/api/places/autocomplete?${params.toString()}`, { method: "GET" });
     picker.suggestions = data?.features || [];
@@ -317,7 +313,7 @@ async function geocodeTypedAddress(kind) {
   picker.loading = true;
   picker.error = "";
   try {
-    const params = new URLSearchParams({ query: formatTunjaQuery(query) });
+    const params = new URLSearchParams({ query: operationalSettings.formatLocalPlaceQuery(query) });
     const data = await apiRequest(`/api/places/geocode?${params.toString()}`, { method: "GET" });
     setPlaceField(kind, data?.feature);
     return placeState[kind].selected;
@@ -394,10 +390,10 @@ async function resolveTypedAddress(kind) {
   picker.error = "";
   try {
     const params = new URLSearchParams({
-      query: formatTunjaQuery(query),
+      query: operationalSettings.formatLocalPlaceQuery(query),
       sessionToken: picker.sessionToken,
-      lat: String(tunjaCenter.lat),
-      lng: String(tunjaCenter.lng),
+      lat: String(operationalSettings.mapCenter.value.lat),
+      lng: String(operationalSettings.mapCenter.value.lng),
     });
     const data = await apiRequest(`/api/places/autocomplete?${params.toString()}`, { method: "GET" });
     const [first] = data?.features || [];
@@ -499,7 +495,8 @@ async function createRequest() {
 
 function initRequestMap() {
   if (!mapEl.value || requestMap) return;
-  requestMap = L.map(mapEl.value, { zoomControl: true }).setView([tunjaCenter.lat, tunjaCenter.lng], 14);
+  const center = operationalSettings.mapCenter.value;
+  requestMap = L.map(mapEl.value, { zoomControl: true }).setView([center.lat, center.lng], 14);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "&copy; OpenStreetMap",
     maxZoom: 19,
@@ -584,7 +581,8 @@ function updateRequestMap() {
     } else if (bounds.length > 1) {
       requestMap.fitBounds(bounds, { padding: [48, 48], maxZoom: 16 });
     } else {
-      requestMap.setView([tunjaCenter.lat, tunjaCenter.lng], 14);
+      const center = operationalSettings.mapCenter.value;
+      requestMap.setView([center.lat, center.lng], 14);
     }
     requestMap.invalidateSize();
     window.setTimeout(() => requestMap?.invalidateSize(), 80);
@@ -815,7 +813,8 @@ watch(
   },
 );
 
-onMounted(() => {
+onMounted(async () => {
+  await operationalSettings.fetchOperationalSettings();
   fetchOperation();
   connectRealtime();
   refreshTimer = window.setInterval(() => fetchOperation({ quiet: true }), 30000);
@@ -1030,7 +1029,7 @@ onBeforeUnmount(() => {
                 <input
                   v-model="placeState.pickup.query"
                   class="h-9 rounded-md border border-slate-200 px-3 pr-9 text-slate-950"
-                  placeholder="Ej. Calle 12 # 7-20, Tunja"
+                  :placeholder="`Ej. Calle 12 # 7-20, ${operationalSettings.settings.value.cityName}`"
                   autocomplete="off"
                   required
                   @input="schedulePlaceSuggestions('pickup')"

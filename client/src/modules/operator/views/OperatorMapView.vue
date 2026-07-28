@@ -14,8 +14,10 @@ import { apiRequest } from "../../../services/api.js";
 import { createRealtimeSocket } from "../../../services/realtime.js";
 import { useAuthStore } from "../../../stores/auth.js";
 import { driverPresenceLabel, isDriverStale } from "../../../lib/driverPresence.js";
+import { useOperationalSettings } from "../../../stores/operationalSettings.js";
 
 const auth = useAuthStore();
+const operationalSettings = useOperationalSettings();
 const mapEl = ref(null);
 const state = reactive({
   loading: true,
@@ -86,7 +88,8 @@ function isAssignable(driver) {
 
 function initMap() {
   if (map || !mapEl.value) return;
-  map = L.map(mapEl.value).setView([5.535, -73.367], 13);
+  const center = operationalSettings.mapCenter.value;
+  map = L.map(mapEl.value).setView([center.lat, center.lng], operationalSettings.mapDefaultZoom.value);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "&copy; OpenStreetMap",
     maxZoom: 19,
@@ -329,6 +332,7 @@ function actorLabel(actorType) {
 watch(() => [filters.status, filters.search], () => renderMap());
 
 onMounted(async () => {
+  await operationalSettings.fetchOperationalSettings();
   await nextTick();
   initMap();
   await fetchSnapshot({ fit: true });

@@ -12,6 +12,7 @@ const preferencesRoutes = require("./modules/preferences/routes/preferences.rout
 const savedDestinationRoutes = require("./modules/saved-destinations/routes/saved-destination.routes");
 const preferredDriverRoutes = require("./modules/preferred-drivers/routes/preferred-driver.routes");
 const serviceTypeRoutes = require("./modules/service-types/routes/service-type.routes");
+const settingsRoutes = require("./modules/settings/routes/settings.routes");
 const adminSimulationRoutes = require("./modules/admin-simulation/routes/admin-simulation.routes");
 const adminNavigationRoutes = require("./modules/admin-navigation/routes/admin-navigation.routes");
 const adminOperationalParametersRoutes = require("./modules/admin-operational-parameters/routes/admin-operational-parameters.routes");
@@ -35,6 +36,7 @@ app.use("/api/preferences", authenticate, preferencesRoutes);
 app.use("/api/saved-destinations", authenticate, savedDestinationRoutes);
 app.use("/api/preferred-drivers", authenticate, preferredDriverRoutes);
 app.use("/api/service-types", authenticate, serviceTypeRoutes);
+app.use("/api/settings", authenticate, settingsRoutes);
 app.use("/api/radio", authenticate, radioRoutes);
 app.use("/api/admin/navigation", authenticate, adminNavigationRoutes);
 app.use("/api/admin/operational-parameters", authenticate, adminOperationalParametersRoutes);

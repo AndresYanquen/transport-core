@@ -3,6 +3,9 @@ import { computed, onMounted, reactive, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { CheckCircle2, RefreshCw, Save, Search, Settings, Tag } from "lucide-vue-next";
 import { apiRequest } from "../../../services/api.js";
+import { useOperationalSettings } from "../../../stores/operationalSettings.js";
+
+const operationalSettings = useOperationalSettings();
 
 const route = useRoute();
 const router = useRouter();
@@ -109,11 +112,7 @@ function syncDrafts() {
 }
 
 function formatCurrency(value) {
-  return new Intl.NumberFormat("es-CO", {
-    style: "currency",
-    currency: "COP",
-    maximumFractionDigits: 0,
-  }).format(Number(value || 0));
+  return operationalSettings.formatCurrency(value);
 }
 
 function formatDate(value) {
@@ -177,7 +176,10 @@ watch(
   },
 );
 
-onMounted(fetchServices);
+onMounted(async () => {
+  await operationalSettings.fetchOperationalSettings();
+  fetchServices();
+});
 </script>
 
 <template>

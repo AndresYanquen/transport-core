@@ -24,6 +24,9 @@ import { computed, onMounted, reactive, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import VChart from "vue-echarts";
 import { apiRequest } from "../../../services/api.js";
+import { useOperationalSettings } from "../../../stores/operationalSettings.js";
+
+const operationalSettings = useOperationalSettings();
 
 use([BarChart, LineChart, PieChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer]);
 
@@ -205,11 +208,7 @@ function formatDateTime(value) {
 }
 
 function formatCurrency(value) {
-  return new Intl.NumberFormat("es-CO", {
-    style: "currency",
-    currency: "COP",
-    maximumFractionDigits: 0,
-  }).format(Number(value || 0));
+  return operationalSettings.formatCurrency(value);
 }
 
 function formatPercent(value) {
@@ -814,7 +813,10 @@ watch(
   },
 );
 
-onMounted(fetchReports);
+onMounted(async () => {
+  await operationalSettings.fetchOperationalSettings();
+  fetchReports();
+});
 </script>
 
 <template>

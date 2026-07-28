@@ -1,5 +1,6 @@
 const axios = require("axios");
 const { env } = require("../../../config");
+const SettingsService = require("../../settings/services/settings.service");
 
 const GOOGLE_PLACES_AUTOCOMPLETE_URL =
   "https://maps.googleapis.com/maps/api/place/autocomplete/json";
@@ -111,7 +112,20 @@ async function googleGet(httpClient, url, options) {
   }
 }
 
+async function getOperationalPlacesSettings() {
+  try {
+    const settings = await SettingsService.getOperationalSettings();
+    return settings.places;
+  } catch (_error) {
+    return {
+      countryBias: "co",
+      searchRadiusMeters: 50000,
+    };
+  }
+}
+
 async function autocomplete({ query, lat, lng, sessionToken }, { httpClient = axios } = {}) {
+  const placesSettings = await getOperationalPlacesSettings();
   const params = {
     input: query,
     sessiontoken: sessionToken,
@@ -120,7 +134,10 @@ async function autocomplete({ query, lat, lng, sessionToken }, { httpClient = ax
 
   if (lat !== undefined && lng !== undefined) {
     params.location = `${lat},${lng}`;
-    params.radius = 50000;
+    params.radius = placesSettings.searchRadiusMeters;
+  }
+  if (placesSettings.countryBias) {
+    params.components = `country:${placesSettings.countryBias}`;
   }
 
   const { data } = await googleGet(httpClient, GOOGLE_PLACES_AUTOCOMPLETE_URL, {

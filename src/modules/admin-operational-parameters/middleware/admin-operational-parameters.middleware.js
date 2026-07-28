@@ -1,7 +1,9 @@
-const allowedKeys = [
-  "client_driver_search_radius_meters",
-  "driver_request_search_radius_meters",
-];
+const {
+  settingDefinitions,
+  validateSettingValue,
+} = require("../../settings/settings.definitions");
+
+const allowedKeys = Object.keys(settingDefinitions);
 
 function validateUpdate(req, res, next) {
   const body = req.body || {};
@@ -15,15 +17,7 @@ function validateUpdate(req, res, next) {
 
   for (const key of allowedKeys) {
     if (settings[key] === undefined) continue;
-
-    const value = Number(settings[key]);
-    if (!Number.isFinite(value) || value < 100 || value > 100000) {
-      return res.status(400).json({
-        message: `${key} must be a number between 100 and 100000 meters.`,
-      });
-    }
-
-    payload[key] = String(Math.trunc(value));
+    payload[key] = validateSettingValue(key, settings[key]);
   }
 
   if (!Object.keys(payload).length) {
