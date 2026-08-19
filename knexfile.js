@@ -9,7 +9,7 @@ const {
   DB_PASSWORD = "",
   DB_SSL = "false",
   DB_SSL_REJECT_UNAUTHORIZED = "false",
-  DB_SEARCH_PATH = "public",
+  DB_SEARCH_PATH = "public,extensions",
   DB_CONNECTION_TIMEOUT_MS = 5000,
   DB_POOL_MAX = 10,
 } = process.env;
