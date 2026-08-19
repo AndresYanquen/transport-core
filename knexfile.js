@@ -9,6 +9,7 @@ const {
   DB_PASSWORD = "",
   DB_SSL = "false",
   DB_SSL_REJECT_UNAUTHORIZED = "false",
+  DB_SEARCH_PATH = "public",
   DB_CONNECTION_TIMEOUT_MS = 5000,
   DB_POOL_MAX = 10,
 } = process.env;
@@ -16,6 +17,15 @@ const {
 function parseBoolean(value) {
   return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
 }
+
+function parseSearchPath(value) {
+  return String(value)
+    .split(",")
+    .map((schema) => schema.trim())
+    .filter(Boolean);
+}
+
+const searchPath = parseSearchPath(DB_SEARCH_PATH);
 
 const baseConfig = {
   client: "pg",
@@ -46,9 +56,11 @@ const baseConfig = {
     min: 0,
     max: Number(DB_POOL_MAX),
   },
+  searchPath,
   migrations: {
     tableName: "knex_migrations",
     directory: "./migrations",
+    schemaName: "public",
     extension: "js",
   },
   seeds: {

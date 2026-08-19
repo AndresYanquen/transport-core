@@ -1,6 +1,8 @@
 const { Pool } = require("pg");
 
-const { env } = require("./env");
+const { env, formatPostgresSearchPath } = require("./env");
+
+const searchPath = formatPostgresSearchPath(env.db.searchPath);
 
 const pool = new Pool({
   connectionString: env.db.connectionString || undefined,
@@ -17,6 +19,7 @@ const pool = new Pool({
   connectionTimeoutMillis: env.db.connectionTimeoutMillis,
   idleTimeoutMillis: env.db.idleTimeoutMillis,
   max: env.db.poolMax,
+  options: searchPath ? `-c search_path=${searchPath}` : undefined,
 });
 
 pool.on("error", (err) => {

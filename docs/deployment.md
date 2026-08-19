@@ -32,6 +32,7 @@ Use Supabase's PostgreSQL connection string, preferably the Session pooler URI f
 DATABASE_URL=postgresql://postgres.project-ref:password@aws-0-region.pooler.supabase.com:5432/postgres
 DB_SSL=true
 DB_SSL_REJECT_UNAUTHORIZED=false
+DB_SEARCH_PATH=public
 ```
 
 You can also use separate variables instead of `DATABASE_URL`:
@@ -44,9 +45,11 @@ DB_USER=postgres.project-ref
 DB_PASSWORD=your-supabase-password
 DB_SSL=true
 DB_SSL_REJECT_UNAUTHORIZED=false
+DB_SEARCH_PATH=public
 ```
 
 If both `DATABASE_URL` and separate `DB_*` variables are set, the app uses `DATABASE_URL`.
+`DB_SEARCH_PATH=public` forces Knex migrations, migration lock tables, and application queries to resolve unqualified tables in the `public` schema.
 
 ## Required production environment
 
@@ -55,6 +58,7 @@ Set these variables in the hosting platform before starting the API:
 - `NODE_ENV=production`
 - `DATABASE_URL` or the separate `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` variables
 - `DB_SSL=true`
+- `DB_SEARCH_PATH=public`
 - `JWT_SECRET`
 - `CORS_ALLOWED_ORIGINS`
 - `VITE_API_BASE_URL`

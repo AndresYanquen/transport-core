@@ -14,6 +14,14 @@ function parseCsv(value, fallback = []) {
     .filter(Boolean);
 }
 
+function formatPostgresSearchPath(searchPath) {
+  if (!searchPath.length) {
+    return "";
+  }
+
+  return searchPath.map((schema) => `"${schema.replace(/"/g, '""')}"`).join(", ");
+}
+
 function getDefaultCorsOrigins(nodeEnv) {
   // In production, require explicit CORS origins from env vars.
   if (nodeEnv === "production") {
@@ -95,6 +103,7 @@ const env = {
   port: parseNumber(process.env.PORT, 3000),
   db: {
     connectionString: process.env.DATABASE_URL || "",
+    searchPath: parseCsv(process.env.DB_SEARCH_PATH, ["public"]),
     host: process.env.DB_HOST || "localhost",
     port: parseNumber(process.env.DB_PORT, 5432),
     database: process.env.DB_NAME || "postgres",
@@ -162,4 +171,4 @@ const env = {
   },
 };
 
-module.exports = { env };
+module.exports = { env, formatPostgresSearchPath };
