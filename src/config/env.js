@@ -19,7 +19,10 @@ function formatPostgresSearchPath(searchPath) {
     return "";
   }
 
-  return searchPath.map((schema) => `"${schema.replace(/"/g, '""')}"`).join(", ");
+  return searchPath
+    .map((schema) => schema.trim())
+    .filter((schema) => /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(schema))
+    .join(",");
 }
 
 function getDefaultCorsOrigins(nodeEnv) {
