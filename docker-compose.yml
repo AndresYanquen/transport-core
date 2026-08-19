@@ -1,4 +1,9 @@
 services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
   backend:
     build:
       context: .
@@ -8,8 +13,11 @@ services:
       - .env
     environment:
       DB_HOST: host.docker.internal
+      REDIS_URL: redis://redis:6379
     ports:
       - "3000:3000"
+    depends_on:
+      - redis
 
   admin-client:
     build:

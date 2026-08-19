@@ -27,6 +27,8 @@ Optional deployment tuning variables:
 - `AUTH_RATE_LIMIT_MAX`
 - `SHUTDOWN_TIMEOUT_MS`
 - `REDIS_URL`
+- `REDIS_CONNECT_TIMEOUT_MS`
+- `REDIS_MAX_RECONNECT_DELAY_MS`
 
 ## Release order
 
@@ -94,6 +96,8 @@ Run backend and frontend together:
 ```sh
 docker compose up --build
 ```
+
+The Compose setup includes Redis and overrides the backend with `REDIS_URL=redis://redis:6379`. If you run the backend container manually and Redis is running on your host machine, use `-e REDIS_URL=redis://host.docker.internal:6379`. When `REDIS_URL` is set, Socket.IO and auth rate limiting use Redis for cross-instance coordination.
 
 ## Scaling notes
 

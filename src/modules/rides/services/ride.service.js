@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const RideModel = require("../models/ride.model");
 const {
   RideStatus,
@@ -24,9 +25,12 @@ const {
 const RideRatingService = require("./ride-rating.service");
 const SettingsService = require("../../settings/services/settings.service");
 const { env } = require("../../../config");
+const { signJwt } = require("../../auth/utils/jwt");
 
 const pool = RideModel.getPool();
 const CLIENT_DRIVER_SEARCH_RADIUS_SETTING = "client_driver_search_radius_meters";
+const PUBLIC_TRACKING_SCOPE = "ride_tracking";
+const PUBLIC_TRACKING_JWT_TTL_SECONDS = 15 * 60;
 
 function safeRealtimeEmit(executor) {
   try {
@@ -289,6 +293,96 @@ function createHttpError(status, message) {
   const error = new Error(message);
   error.status = status;
   return error;
+}
+
+function createTrackingToken() {
+  return crypto.randomBytes(32).toString("base64url");
+}
+
+function buildPublicTrackingRide(ride) {
+  if (!ride) {
+    return null;
+  }
+
+  return {
+    id: ride.id,
+    status: ride.status,
+    serviceType: ride.serviceType,
+    pickupAddress: ride.pickupAddress,
+    dropoffAddress: ride.dropoffAddress,
+    hasDestination: ride.hasDestination,
+    pickupLocation: ride.pickupLocation,
+    dropoffLocation: ride.dropoffLocation,
+    estimatedDistanceMeters: ride.estimatedDistanceMeters,
+    estimatedDurationSeconds: ride.estimatedDurationSeconds,
+    actualDistanceMeters: ride.actualDistanceMeters,
+    actualDurationSeconds: ride.actualDurationSeconds,
+    requestedAt: ride.requestedAt,
+    acceptedAt: ride.acceptedAt,
+    driverArrivedAt: ride.driverArrivedAt,
+    startedAt: ride.startedAt,
+    completedAt: ride.completedAt,
+    canceledAt: ride.canceledAt,
+    updatedAt: ride.updatedAt,
+    cancellationReason: ride.cancellationReason,
+    driverLocation: ride.driverLocation,
+    driver: ride.driver
+      ? {
+          firstName: ride.driver.firstName,
+          fullName: ride.driver.fullName,
+          vehicleMake: ride.driver.vehicleMake,
+          vehicleModel: ride.driver.vehicleModel,
+          vehicleYear: ride.driver.vehicleYear,
+          vehicleColor: ride.driver.vehicleColor,
+          vehiclePlate: ride.driver.vehiclePlate,
+          vehicleType: ride.driver.vehicleType,
+          currentLocation: ride.driver.currentLocation,
+          headingDegrees: ride.driver.headingDegrees,
+          speedKmh: ride.driver.speedKmh,
+        }
+      : null,
+  };
+}
+
+function signPublicTrackingJwt(ride) {
+  return signJwt(
+    {
+      scope: PUBLIC_TRACKING_SCOPE,
+      rideId: ride.id,
+      trackingToken: ride.trackingToken,
+    },
+    {
+      secret: env.security.jwtSecret,
+      expiresInSeconds: PUBLIC_TRACKING_JWT_TTL_SECONDS,
+    }
+  );
+}
+
+async function getPublicRideTracking(trackingToken) {
+  const normalizedToken =
+    typeof trackingToken === "string" ? trackingToken.trim() : "";
+
+  if (!normalizedToken) {
+    throw createHttpError(400, "trackingToken is required.");
+  }
+
+  const rideRow = await RideModel.getRideByTrackingToken(normalizedToken, {
+    includeDriver: true,
+  });
+
+  if (!rideRow) {
+    throw createHttpError(404, "Ride tracking link not found.");
+  }
+
+  const ride = RideModel.mapRideRow(rideRow);
+
+  return {
+    ride: buildPublicTrackingRide(ride),
+    realtime: {
+      token: signPublicTrackingJwt(ride),
+      expiresInSeconds: PUBLIC_TRACKING_JWT_TTL_SECONDS,
+    },
+  };
 }
 
 function canViewRide(rideRow, viewer) {
@@ -792,6 +886,7 @@ async function createRide({
     }
 
     const rideRow = await RideModel.insertRide(dbClient, {
+      trackingToken: createTrackingToken(),
       clientId,
       status: RideStatus.REQUESTED,
       serviceType,
@@ -1899,6 +1994,7 @@ module.exports = {
   systemCancelRide,
   listRides,
   getRideById,
+  getPublicRideTracking,
   listDriverInvites,
   listRideDriverInvites,
   listNearbyDriversForRide,
@@ -1912,6 +2008,8 @@ module.exports = {
     validateTransitionPayload,
     normalizeActorType,
     canViewRide,
+    buildPublicTrackingRide,
+    PUBLIC_TRACKING_SCOPE,
     assertDriverCanClaim,
   },
 };

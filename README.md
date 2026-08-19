@@ -58,9 +58,12 @@ Copy `.env.example` to `.env` for local development. In production, `JWT_SECRET`
 | `SHUTDOWN_TIMEOUT_MS` | `10000` | Graceful shutdown timeout before forcing process exit. |
 | `SOCKET_ENABLED` | `true` | Enables Socket.IO realtime server. |
 | `SOCKET_PATH` | `/socket.io` | Socket.IO endpoint path. |
-| `REDIS_URL` | `redis://localhost:6379` | Redis connection URL reserved for horizontal scaling features such as Socket.IO adapter, distributed rate limiting, locks, and queues. |
+| `REDIS_URL` | `redis://localhost:6379` | Redis connection URL. When set, Socket.IO uses Redis pub/sub and auth rate limiting uses a distributed Redis store. |
+| `REDIS_CONNECT_TIMEOUT_MS` | `5000` | Redis connection timeout in milliseconds. |
+| `REDIS_MAX_RECONNECT_DELAY_MS` | `2000` | Maximum Redis reconnect delay in milliseconds. |
 | `DRIVER_PRESENCE_STALE_SECONDS` | `90` | Age after which online driver presence is considered stale. |
 | `DRIVER_PRESENCE_SWEEP_SECONDS` | `30` | Interval for sweeping stale driver presence records. |
+| `DRIVER_PRESENCE_CACHE_ENABLED` | `true` | Enables best-effort Redis cache writes for recent online driver presence when `REDIS_URL` is set. |
 | `RADIO_REQUEST_TTL_SECONDS` | `180` | Time before pending radio requests expire. |
 | `RADIO_CONNECT_TIMEOUT_SECONDS` | `15` | Time allowed for radio sessions to connect. |
 | `RADIO_IDLE_TIMEOUT_SECONDS` | `45` | Idle timeout for radio sessions. |
@@ -107,7 +110,7 @@ To run both containers locally with the existing local PostgreSQL instance:
 docker compose up --build
 ```
 
-Backend: `http://localhost:3000`. Admin frontend: `http://localhost:8080`.
+Compose also starts Redis at `redis://redis:6379` for the backend and exposes it locally on port `6379`. Backend: `http://localhost:3000`. Admin frontend: `http://localhost:8080`.
 src/
   app.js             # Express app configuration, middleware, and route mounting
   server.js          # HTTP server bootstrap

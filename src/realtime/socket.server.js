@@ -1,12 +1,16 @@
 const { Server } = require("socket.io");
+const { createAdapter } = require("@socket.io/redis-adapter");
 
 const { env } = require("../config");
 const { isAllowedCorsOrigin } = require("../config/cors");
+const { initializeRedisClients } = require("../config/redis");
+const { logger } = require("../config/logger");
 const AuthModel = require("../modules/auth/models/auth.model");
 const { verifyJwt } = require("../modules/auth/utils/jwt");
 const { query } = require("../config/database");
 
 let ioInstance = null;
+const PUBLIC_TRACKING_SCOPE = "ride_tracking";
 const uuidV4LikeRegex =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
 
@@ -41,6 +45,29 @@ function roleRoom(role) {
 
 function rideRoom(rideId) {
   return `ride:${rideId}`;
+}
+
+async function ensureTrackingTokenCanAccessRideRoom({ rideId, trackingToken }) {
+  if (!uuidV4LikeRegex.test(String(rideId || ""))) {
+    return { ok: false, reason: "invalid_ride_id" };
+  }
+
+  if (!trackingToken) {
+    return { ok: false, reason: "unauthorized" };
+  }
+
+  const { rows } = await query(
+    `
+      SELECT id
+      FROM rides
+      WHERE id = $1
+        AND tracking_token = $2
+      LIMIT 1
+    `,
+    [rideId, trackingToken]
+  );
+
+  return rows[0] ? { ok: true } : { ok: false, reason: "forbidden" };
 }
 
 async function ensureUserCanAccessRideRoom({ rideId, userId, role }) {
@@ -94,6 +121,31 @@ async function socketAuthMiddleware(socket, next) {
       secret: env.security.jwtSecret,
     });
 
+    if (payload.scope === PUBLIC_TRACKING_SCOPE) {
+      if (!payload.rideId || !payload.trackingToken) {
+        return next(new Error("Tracking token missing ride access claims."));
+      }
+
+      const access = await ensureTrackingTokenCanAccessRideRoom({
+        rideId: payload.rideId,
+        trackingToken: payload.trackingToken,
+      });
+
+      if (!access.ok) {
+        return next(new Error("Tracking token cannot access this ride."));
+      }
+
+      socket.data.auth = {
+        token,
+        scope: PUBLIC_TRACKING_SCOPE,
+        rideId: payload.rideId,
+        trackingToken: payload.trackingToken,
+        payload,
+      };
+
+      return next();
+    }
+
     if (!payload.sub) {
       return next(new Error("Authorization token missing subject."));
     }
@@ -122,6 +174,38 @@ async function socketAuthMiddleware(socket, next) {
 
 function registerConnectionHandlers(io) {
   io.on("connection", (socket) => {
+    if (socket.data.auth?.scope === PUBLIC_TRACKING_SCOPE) {
+      const { rideId } = socket.data.auth;
+
+      socket.emit("realtime:ready", {
+        socketId: socket.id,
+        scope: PUBLIC_TRACKING_SCOPE,
+        rideId,
+        connectedAt: new Date().toISOString(),
+      });
+
+      socket.on("ride:public-subscribe", ({ rideId: requestedRideId } = {}) => {
+        if (requestedRideId && requestedRideId !== rideId) {
+          socket.emit("ride:subscribe-denied", {
+            rideId: requestedRideId,
+            reason: "forbidden",
+          });
+          return;
+        }
+
+        socket.join(rideRoom(rideId));
+        socket.emit("ride:subscribed", { rideId });
+      });
+
+      socket.on("ride:unsubscribe", ({ rideId: requestedRideId } = {}) => {
+        if (!requestedRideId || requestedRideId === rideId) {
+          socket.leave(rideRoom(rideId));
+        }
+      });
+
+      return;
+    }
+
     const { user } = socket.data;
     socket.join(userRoom(user.id));
     socket.join(roleRoom(user.role));
@@ -175,7 +259,7 @@ function registerConnectionHandlers(io) {
   });
 }
 
-function initializeSocketServer(httpServer) {
+async function initializeSocketServer(httpServer) {
   if (!env.realtime.enabled) {
     return null;
   }
@@ -187,6 +271,14 @@ function initializeSocketServer(httpServer) {
       credentials: true,
     },
   });
+
+  const redisClients = await initializeRedisClients();
+  if (redisClients) {
+    io.adapter(createAdapter(redisClients.pubClient, redisClients.subClient));
+    logger.info("socket_redis_adapter_enabled");
+  } else {
+    logger.info("socket_memory_adapter_enabled");
+  }
 
   io.use(socketAuthMiddleware);
   registerConnectionHandlers(io);

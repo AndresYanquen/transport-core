@@ -1,9 +1,11 @@
+const crypto = require("crypto");
 const { pool, query } = require("../../../config/database");
 const { RideInviteStatus } = require("../constants/ride-invite-status");
 const { TERMINAL_RIDE_STATUSES } = require("../constants/ride-status");
 
 const BASE_RIDE_FIELDS = `
   id,
+  tracking_token,
   client_id,
   driver_id,
   status,
@@ -82,8 +84,13 @@ function toNullableNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+function createTrackingToken() {
+  return crypto.randomBytes(32).toString("base64url");
+}
+
 class RideModel {
   static async insertRide(dbClient, {
+    trackingToken,
     clientId,
     driverId = null,
     status,
@@ -136,6 +143,7 @@ class RideModel {
     const { rows } = await executor.query(
       `
         INSERT INTO rides (
+          tracking_token,
           client_id,
           driver_id,
           status,
@@ -168,13 +176,13 @@ class RideModel {
           $6,
           $7,
           $8,
-          CASE WHEN $9::text IS NULL THEN NULL
-              ELSE ST_GeogFromText($9::text)
-          END,
+          $9,
           CASE WHEN $10::text IS NULL THEN NULL
               ELSE ST_GeogFromText($10::text)
           END,
-          $11,
+          CASE WHEN $11::text IS NULL THEN NULL
+              ELSE ST_GeogFromText($11::text)
+          END,
           $12,
           $13,
           $14,
@@ -183,13 +191,15 @@ class RideModel {
           $17,
           $18,
           $19,
-          COALESCE($20::jsonb, '{}'::jsonb),
-          $21,
-          $22
+          $20,
+          COALESCE($21::jsonb, '{}'::jsonb),
+          $22,
+          $23
         )
         RETURNING ${BASE_RIDE_FIELDS}
       `,
       [
+        trackingToken || createTrackingToken(),
         clientId,
         driverId,
         status,
@@ -314,6 +324,53 @@ class RideModel {
         WHERE r.id = $1
       `,
       [rideId]
+    );
+
+    return rows[0] ?? null;
+  }
+
+  static async getRideByTrackingToken(
+    trackingToken,
+    { includeDriver = false, dbClient } = {}
+  ) {
+    const executor = getExecutor(dbClient);
+    const driverSelect = includeDriver
+      ? `,
+          du.first_name AS driver_first_name,
+          du.last_name AS driver_last_name,
+          d.vehicle_make AS driver_vehicle_make,
+          d.vehicle_model AS driver_vehicle_model,
+          d.vehicle_year AS driver_vehicle_year,
+          d.vehicle_color AS driver_vehicle_color,
+          d.vehicle_plate AS driver_vehicle_plate,
+          d.vehicle_type AS driver_vehicle_type,
+          d.status AS driver_status,
+          ST_AsGeoJSON(d.current_location)::jsonb AS driver_current_location_geojson,
+          d.heading_degrees AS driver_heading_degrees,
+          d.speed_kmh AS driver_speed_kmh`
+      : "";
+
+    const driverJoin = includeDriver
+      ? `
+        LEFT JOIN drivers d ON d.user_id = r.driver_id
+        LEFT JOIN users du ON du.id = d.user_id
+      `
+      : "";
+
+    const { rows } = await executor.query(
+      `
+        SELECT
+          r.*
+          ${driverSelect}
+        FROM (
+          SELECT ${BASE_RIDE_FIELDS}
+          FROM rides
+        ) r
+        ${driverJoin}
+        WHERE r.tracking_token = $1
+        LIMIT 1
+      `,
+      [trackingToken]
     );
 
     return rows[0] ?? null;
@@ -491,6 +548,7 @@ class RideModel {
 
     return {
       id: row.id,
+      trackingToken: row.tracking_token ?? null,
       clientId: row.client_id,
       passenger:
         row.client_first_name !== undefined ||

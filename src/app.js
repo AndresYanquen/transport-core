@@ -2,15 +2,16 @@ const express = require("express");
 const cors = require("cors");
 const compression = require("compression");
 const helmet = require("helmet");
-const rateLimit = require("express-rate-limit");
 
 const { pool } = require("./config/database");
 const { env } = require("./config");
 const { corsOptions } = require("./config/cors");
 const { logger } = require("./config/logger");
 const { requestLogger } = require("./middleware/request-logger.middleware");
+const { createAuthRateLimiter } = require("./middleware/rate-limit.middleware");
 const authRoutes = require("./modules/auth/routes/auth.routes");
 const rideRoutes = require("./modules/rides/routes/ride.routes");
+const publicRideTrackingRoutes = require("./modules/rides/routes/public-ride-tracking.routes");
 const driverRoutes = require("./modules/drivers/routes/driver.routes");
 const placesRoutes = require("./modules/places/routes/places.routes");
 const preferencesRoutes = require("./modules/preferences/routes/preferences.routes");
@@ -38,17 +39,10 @@ app.use(compression());
 app.use(express.json({ limit: env.http.jsonBodyLimit }));
 app.use(requestLogger);
 
-const authRateLimiter = rateLimit({
-  windowMs: env.http.authRateLimitWindowMs,
-  limit: env.http.authRateLimitMax,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    message: "Too many authentication attempts. Please try again later.",
-  },
-});
+const authRateLimiter = createAuthRateLimiter();
 
 app.use("/api/auth", authRateLimiter, authRoutes);
+app.use("/api/rides/public", publicRideTrackingRoutes);
 app.use("/api/rides", authenticate, rideRoutes);
 app.use("/api/drivers", authenticate, driverRoutes);
 app.use("/api/places", authenticate, placesRoutes);

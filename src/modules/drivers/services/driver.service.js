@@ -1,6 +1,7 @@
 const DriverModel = require("../models/driver.model");
 const RideModel = require("../../rides/models/ride.model");
 const { emitToRide, emitToRole, emitToUser } = require("../../../realtime/socket.server");
+const DriverPresenceCache = require("./driver-presence-cache.service");
 
 function createHttpError(status, message) {
   const error = new Error(message);
@@ -56,6 +57,9 @@ async function emitDriverLocationUpdated(driver) {
       emitToRide(rideRow.id, "ride:driver-location-updated", {
         rideId: rideRow.id,
         driverId: driver.userId,
+        currentLocation: driver.currentLocation ?? { lat: null, lng: null },
+        headingDegrees: driver.headingDegrees ?? null,
+        speedKmh: driver.speedKmh ?? null,
         emittedAt,
       })
     );
@@ -130,6 +134,8 @@ async function updateLocation(driverId, { currentLocationWkt, heading, speedKmh,
     throw createHttpError(500, "Failed to update driver location.");
   }
 
+  DriverPresenceCache.writeRecentPresenceBestEffort(driver);
+
   if (hasLocation) {
     await emitDriverLocationUpdated(driver);
   }
@@ -148,6 +154,8 @@ async function updateStatus(driverId, status) {
   if (!driver) {
     throw createHttpError(500, "Failed to update driver status.");
   }
+
+  DriverPresenceCache.writeRecentPresenceBestEffort(driver);
 
   if (driver.status === "online") {
     await matchPendingRidesForDriverBestEffort(driver);
@@ -174,6 +182,8 @@ async function setDriverStatus(driverId, status, dbClient) {
     throw createHttpError(500, "Failed to update driver status.");
   }
 
+  DriverPresenceCache.writeRecentPresenceBestEffort(driver);
+
   safeRealtimeEmit(() =>
     emitToRole("admin", "admin:driver-status-updated", buildDriverRealtimePayload(driver))
   );
@@ -186,6 +196,7 @@ async function restoreDriverAvailability(driverId, dbClient) {
   if (!driver) {
     throw createHttpError(500, "Failed to restore driver availability.");
   }
+  DriverPresenceCache.writeRecentPresenceBestEffort(driver);
   safeRealtimeEmit(() =>
     emitToRole("admin", "admin:driver-status-updated", buildDriverRealtimePayload(driver))
   );
@@ -195,6 +206,7 @@ async function restoreDriverAvailability(driverId, dbClient) {
 async function expireStaleOnlineDrivers() {
   const driverIds = await DriverModel.expireStaleOnlineDrivers();
   for (const driverId of driverIds) {
+    DriverPresenceCache.removeRecentPresenceBestEffort(driverId);
     const driver = await DriverModel.getDriverById(driverId);
     if (driver) {
       safeRealtimeEmit(() =>

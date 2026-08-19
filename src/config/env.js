@@ -139,9 +139,15 @@ const env = {
     enabled: parseBoolean(process.env.SOCKET_ENABLED, true),
     path: process.env.SOCKET_PATH || "/socket.io",
   },
+  redis: {
+    url: process.env.REDIS_URL || "",
+    connectTimeoutMs: parseNumber(process.env.REDIS_CONNECT_TIMEOUT_MS, 5000),
+    maxReconnectDelayMs: parseNumber(process.env.REDIS_MAX_RECONNECT_DELAY_MS, 2000),
+  },
   driverPresence: {
     staleAfterSeconds: parseNumber(process.env.DRIVER_PRESENCE_STALE_SECONDS, 90),
     sweepIntervalSeconds: parseNumber(process.env.DRIVER_PRESENCE_SWEEP_SECONDS, 30),
+    cacheEnabled: parseBoolean(process.env.DRIVER_PRESENCE_CACHE_ENABLED, true),
   },
   radio: {
     requestTtlSeconds: parseNumber(process.env.RADIO_REQUEST_TTL_SECONDS, 180),

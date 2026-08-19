@@ -7,6 +7,11 @@ const routes = [
     redirect: { name: "admin-login" },
   },
   {
+    path: "/track/:token",
+    name: "public-ride-tracking",
+    component: () => import("../modules/public/views/PublicRideTrackingView.vue"),
+  },
+  {
     path: "/operator/login",
     name: "operator-login",
     component: () => import("../modules/admin/views/AdminLoginView.vue"),

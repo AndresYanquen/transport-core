@@ -3,6 +3,7 @@ const http = require("http");
 const app = require("./app");
 const { env } = require("./config");
 const { pool } = require("./config/database");
+const { closeRedisClients } = require("./config/redis");
 const { logger } = require("./config/logger");
 const { validateProductionEnv } = require("./config/validate-env");
 const { initializeSocketServer, closeSocketServer } = require("./realtime/socket.server");
@@ -39,6 +40,7 @@ async function shutdown(signal) {
 
   try {
     await closeSocketServer();
+    await closeRedisClients();
     await new Promise((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
     });
@@ -59,7 +61,7 @@ async function start() {
     await assertDatabaseConnection();
     logger.info("database_connected");
 
-    initializeSocketServer(server);
+    await initializeSocketServer(server);
     startDriverPresenceWorker();
     startRadioWorker();
 
