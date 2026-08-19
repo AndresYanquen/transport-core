@@ -11,10 +11,12 @@ function validateProductionEnv() {
     missing.push("JWT_SECRET");
   }
 
-  if (!process.env.DB_HOST) missing.push("DB_HOST");
-  if (!process.env.DB_NAME) missing.push("DB_NAME");
-  if (!process.env.DB_USER) missing.push("DB_USER");
-  if (!process.env.DB_PASSWORD) missing.push("DB_PASSWORD");
+  if (!process.env.DATABASE_URL) {
+    if (!process.env.DB_HOST) missing.push("DB_HOST");
+    if (!process.env.DB_NAME) missing.push("DB_NAME");
+    if (!process.env.DB_USER) missing.push("DB_USER");
+    if (!process.env.DB_PASSWORD) missing.push("DB_PASSWORD");
+  }
   if (!process.env.CORS_ALLOWED_ORIGINS) missing.push("CORS_ALLOWED_ORIGINS");
 
   if (env.cors.allowedOrigins.includes("*")) {

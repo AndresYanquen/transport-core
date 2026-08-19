@@ -1,12 +1,13 @@
 # Coolify Deployment
 
-This repository is set up for Coolify with Docker Compose. The production stack runs:
+This repository is set up for Coolify with Docker Compose and Supabase PostgreSQL. The production stack runs:
 
-- `postgres`: PostgreSQL with a persistent Docker volume.
 - `redis`: Redis with a persistent Docker volume.
 - `backend`: Node/Express API and Socket.IO server.
 - `admin-client`: Vue/Vite admin frontend served by Nginx.
 - `migrate`: one-off migration service behind the `release` compose profile.
+
+PostgreSQL is external and should be provided by Supabase.
 
 ## Coolify setup
 
@@ -19,22 +20,46 @@ This repository is set up for Coolify with Docker Compose. The production stack 
    - Admin frontend service: map to container port `80` through the `admin-client` service.
 6. Set `CORS_ALLOWED_ORIGINS` to the exact frontend URL, for example `https://admin.example.com`.
 7. Set `VITE_API_BASE_URL` to the exact backend URL, for example `https://api.example.com`.
-8. Deploy the stack.
-9. Run database migrations once after the first deploy and after every migration change.
+8. Set `DATABASE_URL` to the Supabase PostgreSQL connection string.
+9. Deploy the stack.
+10. Run database migrations once after the first deploy and after every migration change.
+
+## Supabase database
+
+Use Supabase's PostgreSQL connection string, preferably the Session pooler URI for server-side apps. Set:
+
+```sh
+DATABASE_URL=postgresql://postgres.project-ref:password@aws-0-region.pooler.supabase.com:5432/postgres
+DB_SSL=true
+DB_SSL_REJECT_UNAUTHORIZED=false
+```
+
+You can also use separate variables instead of `DATABASE_URL`:
+
+```sh
+DB_HOST=aws-0-region.pooler.supabase.com
+DB_PORT=5432
+DB_NAME=postgres
+DB_USER=postgres.project-ref
+DB_PASSWORD=your-supabase-password
+DB_SSL=true
+DB_SSL_REJECT_UNAUTHORIZED=false
+```
+
+If both `DATABASE_URL` and separate `DB_*` variables are set, the app uses `DATABASE_URL`.
 
 ## Required production environment
 
 Set these variables in the hosting platform before starting the API:
 
 - `NODE_ENV=production`
-- `DB_NAME`
-- `DB_USER`
-- `DB_PASSWORD`
+- `DATABASE_URL` or the separate `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` variables
+- `DB_SSL=true`
 - `JWT_SECRET`
 - `CORS_ALLOWED_ORIGINS`
 - `VITE_API_BASE_URL`
 
-`DB_HOST`, `DB_PORT`, `DB_SSL`, `REDIS_URL`, and `PORT` are set by `docker-compose.yml` for Coolify. `JWT_SECRET`, database settings, and `CORS_ALLOWED_ORIGINS` are validated at startup in production. The process exits if any are missing.
+`REDIS_URL` and `PORT` are set by `docker-compose.yml` for Coolify. `JWT_SECRET`, database settings, and `CORS_ALLOWED_ORIGINS` are validated at startup in production. The process exits if any are missing.
 
 Optional deployment tuning variables:
 
@@ -83,7 +108,7 @@ Use `/api/live` for liveness checks and `/api/ready` for load balancer readiness
 
 ## Local Docker smoke test
 
-For a production-like local smoke test, copy the Coolify env template and fill the required values:
+For a production-like local smoke test against Supabase, copy the Coolify env template and fill the required values:
 
 ```sh
 cp .env.coolify.example .env
@@ -96,7 +121,7 @@ Then run migrations:
 docker compose --profile release run --rm migrate
 ```
 
-The admin frontend will be available on `http://localhost:8080` and the backend on `http://localhost:3000`.
+The admin frontend will be available on `http://localhost:8080` and the backend on `http://localhost:3000`. Make sure Supabase allows the connection from your machine or server.
 
 ## Manual image builds
 

@@ -1,6 +1,7 @@
 require("dotenv").config();
 
 const {
+  DATABASE_URL = "",
   DB_HOST = "localhost",
   DB_PORT = 5432,
   DB_NAME = "postgres",
@@ -18,19 +19,29 @@ function parseBoolean(value) {
 
 const baseConfig = {
   client: "pg",
-  connection: {
-    host: DB_HOST,
-    port: Number(DB_PORT),
-    database: DB_NAME,
-    user: DB_USER,
-    password: DB_PASSWORD,
-    ssl: parseBoolean(DB_SSL)
-      ? {
-          rejectUnauthorized: parseBoolean(DB_SSL_REJECT_UNAUTHORIZED),
-        }
-      : false,
-    connectionTimeoutMillis: Number(DB_CONNECTION_TIMEOUT_MS),
-  },
+  connection: DATABASE_URL
+    ? {
+        connectionString: DATABASE_URL,
+        ssl: parseBoolean(DB_SSL)
+          ? {
+              rejectUnauthorized: parseBoolean(DB_SSL_REJECT_UNAUTHORIZED),
+            }
+          : false,
+        connectionTimeoutMillis: Number(DB_CONNECTION_TIMEOUT_MS),
+      }
+    : {
+        host: DB_HOST,
+        port: Number(DB_PORT),
+        database: DB_NAME,
+        user: DB_USER,
+        password: DB_PASSWORD,
+        ssl: parseBoolean(DB_SSL)
+          ? {
+              rejectUnauthorized: parseBoolean(DB_SSL_REJECT_UNAUTHORIZED),
+            }
+          : false,
+        connectionTimeoutMillis: Number(DB_CONNECTION_TIMEOUT_MS),
+      },
   pool: {
     min: 0,
     max: Number(DB_POOL_MAX),
