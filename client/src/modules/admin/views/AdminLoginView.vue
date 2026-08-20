@@ -1,7 +1,8 @@
 <script setup>
 import { computed, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { Eye, EyeOff, LockKeyhole, LogIn, ShieldCheck } from "lucide-vue-next";
+import { Eye, EyeOff, LockKeyhole, LogIn } from "lucide-vue-next";
+import goTaxiLogo from "../../../assets/images/logo/gottaxi.png";
 import { useAuthStore } from "../../../stores/auth.js";
 
 const route = useRoute();
@@ -48,8 +49,11 @@ async function submit() {
       >
         <div class="mb-6 flex items-start justify-between gap-4">
           <div>
-            <div class="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-md bg-slate-950 text-white">
-              <LockKeyhole class="h-5 w-5" />
+            <div class="mb-4 flex items-center gap-3">
+              <img class="h-12 w-20 rounded-md object-contain object-center" :src="goTaxiLogo" alt="GoTaxi" />
+              <div class="inline-flex h-10 w-10 items-center justify-center rounded-md bg-slate-950 text-white">
+                <LockKeyhole class="h-5 w-5" />
+              </div>
             </div>
             <h1 class="text-2xl font-semibold tracking-normal text-slate-950">
               {{ isOperatorLogin ? "Ingreso de operadora" : "Admin sign in" }}
@@ -127,8 +131,10 @@ async function submit() {
 
     <section class="hidden min-h-screen border-l border-white/10 bg-slate-900 px-10 py-8 lg:flex lg:flex-col lg:justify-between">
       <div class="flex items-center gap-2 text-sm font-medium text-slate-300">
-        <ShieldCheck class="h-4 w-4 text-emerald-300" />
-        {{ isOperatorLogin ? "Centro de operaciones" : "Taxi operations admin" }}
+        <span class="inline-flex rounded-md bg-white/95 px-2 py-1">
+          <img class="h-10 w-20 object-contain object-center" :src="goTaxiLogo" alt="GoTaxi" />
+        </span>
+        <span>{{ isOperatorLogin ? "Centro de operaciones" : "Taxi operations admin" }}</span>
       </div>
 
       <div class="max-w-xl">

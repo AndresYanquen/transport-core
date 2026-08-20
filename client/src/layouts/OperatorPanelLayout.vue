@@ -15,6 +15,7 @@ import {
 } from "lucide-vue-next";
 import { computed, onMounted, ref } from "vue";
 import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
+import goTaxiLogo from "../assets/images/logo/gottaxi.png";
 import { useAuthStore } from "../stores/auth.js";
 import { useOperatorNavigationStore } from "../stores/operatorNavigation.js";
 
@@ -127,9 +128,7 @@ onMounted(() => {
     >
       <div :class="['flex h-14 items-center justify-between border-b border-slate-200 px-4', sidebarCollapsed ? 'lg:justify-center lg:px-2' : '']">
         <RouterLink class="flex min-w-0 items-center gap-2 font-semibold" to="/operator">
-          <span class="grid h-8 w-8 place-items-center rounded-md bg-emerald-600 text-white">
-            <Headset class="h-4 w-4" />
-          </span>
+          <img class="h-9 w-14 shrink-0 rounded-md object-contain object-center" :src="goTaxiLogo" alt="" />
           <span :class="['truncate', sidebarCollapsed ? 'lg:hidden' : '']">Centro de Operaciones</span>
         </RouterLink>
         <button class="grid h-8 w-8 place-items-center lg:hidden" type="button" @click="sidebarOpen = false">

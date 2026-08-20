@@ -7,6 +7,22 @@ const routes = [
     redirect: { name: "admin-login" },
   },
   {
+    path: "/landing",
+    name: "landing",
+    component: () => import("../modules/public/views/LandingView.vue"),
+    meta: {
+      layout: "desktop",
+    },
+  },
+  {
+    path: "/privacy-policy",
+    name: "privacy-policy",
+    component: () => import("../modules/public/views/PrivacyPolicyView.vue"),
+    meta: {
+      layout: "desktop",
+    },
+  },
+  {
     path: "/track/:token",
     name: "public-ride-tracking",
     component: () => import("../modules/public/views/PublicRideTrackingView.vue"),
