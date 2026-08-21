@@ -181,6 +181,9 @@ const featureCards = [
         <RouterLink class="contact-policy-link" :to="{ name: 'privacy-policy' }">
           Privacy Policy
         </RouterLink>
+        <RouterLink class="contact-policy-link" :to="{ name: 'account-deletion' }">
+          Delete account request
+        </RouterLink>
       </div>
     </section>
   </main>

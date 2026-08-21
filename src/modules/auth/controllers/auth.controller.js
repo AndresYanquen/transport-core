@@ -18,6 +18,15 @@ async function login(req, res, next) {
   }
 }
 
+async function google(req, res, next) {
+  try {
+    const session = await AuthService.loginWithGoogle(req.body);
+    res.status(200).json(session);
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function me(req, res, next) {
   try {
     const result = await AuthService.getCurrentUser(req.user);
@@ -30,5 +39,6 @@ async function me(req, res, next) {
 module.exports = {
   signup,
   login,
+  google,
   me,
 };

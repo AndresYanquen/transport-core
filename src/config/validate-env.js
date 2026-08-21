@@ -18,6 +18,7 @@ function validateProductionEnv() {
     if (!process.env.DB_PASSWORD) missing.push("DB_PASSWORD");
   }
   if (!process.env.CORS_ALLOWED_ORIGINS) missing.push("CORS_ALLOWED_ORIGINS");
+  if (!process.env.GOOGLE_CLIENT_ID) missing.push("GOOGLE_CLIENT_ID");
 
   if (env.cors.allowedOrigins.includes("*")) {
     missing.push("CORS_ALLOWED_ORIGINS must not be * in production");

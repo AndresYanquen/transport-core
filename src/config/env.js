@@ -171,6 +171,7 @@ const env = {
   },
   google: {
     mapsApiKey: process.env.GOOGLE_MAPS_API_KEY || "",
+    clientId: process.env.GOOGLE_CLIENT_ID || "",
   },
 };
 

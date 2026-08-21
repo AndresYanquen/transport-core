@@ -90,7 +90,28 @@ function validateLogin(req, res, next) {
   next();
 }
 
+function validateGoogleLogin(req, res, next) {
+  const { idToken, rememberMe } = req.body || {};
+
+  if (!idToken) {
+    return res.status(400).json({ message: "idToken is required." });
+  }
+
+  if (typeof idToken !== "string") {
+    return res.status(400).json({ message: "idToken must be a string." });
+  }
+
+  if (rememberMe !== undefined && typeof rememberMe !== "boolean") {
+    return res.status(400).json({
+      message: "rememberMe must be a boolean when provided.",
+    });
+  }
+
+  next();
+}
+
 module.exports = {
   signup: validateSignup,
   login: validateLogin,
+  google: validateGoogleLogin,
 };

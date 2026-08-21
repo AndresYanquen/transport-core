@@ -110,6 +110,10 @@ const sections = [
             Para consultas sobre privacidad o solicitudes relacionadas con tus datos,
             contacta al equipo responsable de GoTaxi.
           </p>
+          <p class="deletion-link-copy">
+            También puedes solicitar la eliminación de tu cuenta y datos asociados desde
+            <RouterLink :to="{ name: 'account-deletion' }">esta página</RouterLink>.
+          </p>
         </div>
         <a href="mailto:privacy@gottaxi.co">
           <Mail :size="18" />
@@ -277,6 +281,15 @@ const sections = [
 
 .policy-section p + p {
   margin-top: 10px;
+}
+
+.deletion-link-copy {
+  margin-top: 10px;
+}
+
+.deletion-link-copy a {
+  color: var(--privacy-accent);
+  font-weight: 800;
 }
 
 .contact-card {

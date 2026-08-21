@@ -8,6 +8,7 @@ const router = Router();
 
 router.post("/signup", validateAuth.signup, AuthController.signup);
 router.post("/login", validateAuth.login, AuthController.login);
+router.post("/google", validateAuth.google, AuthController.google);
 router.get("/me", authenticate, AuthController.me);
 
 module.exports = router;

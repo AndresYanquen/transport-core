@@ -3,8 +3,10 @@ const crypto = require("crypto");
 
 const AuthModel = require("../models/auth.model");
 const { env } = require("../../../config");
+const { logger } = require("../../../config/logger");
 const { signJwt } = require("../utils/jwt");
 const { normalizePhoneNumber } = require("../utils/phone");
+const GoogleAuthService = require("./google-auth.service");
 
 const PASSWORD_SALT_ROUNDS = 12;
 const VERIFICATION_TOKEN_BYTES = 32;
@@ -64,6 +66,91 @@ function generateToken(bytes = 32) {
 
 function hashToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function splitDisplayName(name) {
+  const normalizedName = String(name || "").trim();
+  if (!normalizedName) {
+    return { firstName: null, lastName: null };
+  }
+
+  const parts = normalizedName.split(/\s+/);
+  return {
+    firstName: parts[0] || null,
+    lastName: parts.length > 1 ? parts.slice(1).join(" ") : null,
+  };
+}
+
+function assertUserCanLogin(userRow) {
+  if (!userRow) {
+    const error = new Error("Unauthorized");
+    error.status = 401;
+    throw error;
+  }
+
+  if (userRow.deleted_at) {
+    const error = new Error("User linked to token no longer exists.");
+    error.status = 401;
+    throw error;
+  }
+
+  if (String(userRow.status || "").toLowerCase() !== "active") {
+    const error = new Error("User account is not active.");
+    error.status = 403;
+    throw error;
+  }
+}
+
+async function ensureGoogleProviderLink(userRow, providerUserId) {
+  const linkedProvider = await AuthModel.linkAuthProvider({
+    userId: userRow.id,
+    provider: "google",
+    providerUserId,
+  });
+
+  if (linkedProvider) {
+    return;
+  }
+
+  const linkedUser = await AuthModel.findByAuthProvider("google", providerUserId);
+  if (linkedUser?.id === userRow.id) {
+    return;
+  }
+
+  const error = new Error("Google account is already linked to another user.");
+  error.status = 409;
+  throw error;
+}
+
+async function buildLoginSession(userRow, { rememberMe = false } = {}) {
+  assertUserCanLogin(userRow);
+
+  const updatedRow = await AuthModel.updateLastLogin(userRow.id);
+  const user = AuthModel.toPublicUser(updatedRow ?? userRow);
+
+  const accessTokenExpiresInSeconds = rememberMe
+    ? env.security.jwtRememberMeExpiresInSeconds
+    : env.security.jwtExpiresInSeconds;
+
+  const accessToken = signJwt(
+    {
+      sub: user.id,
+      role: user.role,
+      email: user.email,
+      type: "access",
+    },
+    {
+      secret: env.security.jwtSecret,
+      expiresInSeconds: accessTokenExpiresInSeconds,
+    }
+  );
+
+  return {
+    user,
+    token: accessToken,
+    expiresIn: accessTokenExpiresInSeconds,
+    rememberMe: Boolean(rememberMe),
+  };
 }
 
 async function registerUser({
@@ -181,33 +268,70 @@ async function loginUser({ email, password, rememberMe = false }) {
     throw error;
   }
 
-  const updatedRow = await AuthModel.updateLastLogin(userRow.id);
+  return buildLoginSession(userRow, { rememberMe });
+}
 
-  const user = AuthModel.toPublicUser(updatedRow ?? userRow);
+async function loginWithGoogle({ idToken, rememberMe = false }) {
+  let googleIdentity;
+  try {
+    googleIdentity = await GoogleAuthService.verifyGoogleIdToken(idToken);
+  } catch (error) {
+    logger.warn("google_auth_invalid_token", {
+      error: { message: error.message, status: error.status },
+    });
+    throw error;
+  }
 
-  const accessTokenExpiresInSeconds = rememberMe
-    ? env.security.jwtRememberMeExpiresInSeconds
-    : env.security.jwtExpiresInSeconds;
-
-  const accessToken = signJwt(
-    {
-      sub: user.id,
-      role: user.role,
-      email: user.email,
-      type: "access",
-    },
-    {
-      secret: env.security.jwtSecret,
-      expiresInSeconds: accessTokenExpiresInSeconds,
-    }
+  let userRow = await AuthModel.findByAuthProvider(
+    "google",
+    googleIdentity.providerUserId
   );
 
-  return {
-    user,
-    token: accessToken,
-    expiresIn: accessTokenExpiresInSeconds,
-    rememberMe: Boolean(rememberMe),
-  };
+  if (userRow) {
+    logger.info("google_auth_success", {
+      userId: userRow.id,
+      provider: "google",
+    });
+    return buildLoginSession(userRow, { rememberMe });
+  }
+
+  userRow = await AuthModel.findByEmail(googleIdentity.email);
+
+  if (userRow) {
+    await ensureGoogleProviderLink(userRow, googleIdentity.providerUserId);
+    userRow = await AuthModel.markEmailVerified(userRow.id) || userRow;
+
+    logger.info("google_auth_provider_linked", {
+      userId: userRow.id,
+      provider: "google",
+    });
+
+    return buildLoginSession(userRow, { rememberMe });
+  }
+
+  const { firstName, lastName } = splitDisplayName(googleIdentity.name);
+  userRow = await AuthModel.createGoogleClientUser({
+    email: googleIdentity.email,
+    firstName,
+    lastName,
+    providerUserId: googleIdentity.providerUserId,
+    profile: {
+      google: {
+        name: googleIdentity.name,
+        picture: googleIdentity.picture,
+      },
+    },
+  });
+
+  await ensureGoogleProviderLink(userRow, googleIdentity.providerUserId);
+  userRow = await AuthModel.markEmailVerified(userRow.id) || userRow;
+
+  logger.info("google_auth_user_created", {
+    userId: userRow.id,
+    provider: "google",
+  });
+
+  return buildLoginSession(userRow, { rememberMe });
 }
 
 async function getCurrentUser(authenticatedUser) {
@@ -225,5 +349,7 @@ async function getCurrentUser(authenticatedUser) {
 module.exports = {
   registerUser,
   loginUser,
+  loginWithGoogle,
   getCurrentUser,
+  buildLoginSession,
 };

@@ -100,6 +100,138 @@ class AuthModel {
     return rows[0] ?? null;
   }
 
+  static async findByAuthProvider(provider, providerUserId) {
+    const normalizedProvider = String(provider || "").trim().toLowerCase();
+    const normalizedProviderUserId = String(providerUserId || "").trim();
+    if (!normalizedProvider || !normalizedProviderUserId) return null;
+
+    const { rows } = await query(
+      `
+        ${baseUserSelect}
+        JOIN user_auth_providers uap ON uap.user_id = u.id
+        WHERE uap.provider = $1
+          AND uap.provider_user_id = $2
+          AND u.deleted_at IS NULL
+      `,
+      [normalizedProvider, normalizedProviderUserId]
+    );
+
+    return rows[0] ?? null;
+  }
+
+  static async linkAuthProvider({ userId, provider, providerUserId }, client = null) {
+    const normalizedProvider = String(provider || "").trim().toLowerCase();
+    const normalizedProviderUserId = String(providerUserId || "").trim();
+    const executor = client || pool;
+
+    if (!userId || !normalizedProvider || !normalizedProviderUserId) {
+      throw new Error("userId, provider, and providerUserId are required.");
+    }
+
+    try {
+      const { rows } = await executor.query(
+        `
+          INSERT INTO user_auth_providers (
+            user_id,
+            provider,
+            provider_user_id
+          )
+          VALUES ($1, $2, $3)
+          ON CONFLICT (provider, provider_user_id)
+          DO NOTHING
+          RETURNING *
+        `,
+        [userId, normalizedProvider, normalizedProviderUserId]
+      );
+
+      return rows[0] ?? null;
+    } catch (error) {
+      if (
+        error.code === "23505" &&
+        error.constraint === "user_auth_providers_user_provider_unique"
+      ) {
+        const conflictError = new Error("User is already linked to this provider.");
+        conflictError.status = 409;
+        throw conflictError;
+      }
+
+      throw error;
+    }
+  }
+
+  static async createGoogleClientUser({
+    email,
+    firstName,
+    lastName,
+    profile = {},
+    providerUserId,
+  }) {
+    const normalizedEmail = email ? String(email).trim().toLowerCase() : null;
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const userInsert = await client.query(
+        `
+          INSERT INTO users (
+            email,
+            username,
+            password_hash,
+            first_name,
+            last_name,
+            phone_number,
+            role,
+            status,
+            email_verified,
+            profile
+          )
+          VALUES ($1, NULL, NULL, $2, $3, NULL, 'client', 'active', true, $4::jsonb)
+          RETURNING id
+        `,
+        [
+          normalizedEmail,
+          firstName ?? null,
+          lastName ?? null,
+          JSON.stringify(profile || {}),
+        ]
+      );
+
+      const userId = userInsert.rows[0].id;
+
+      await client.query(
+        `
+          INSERT INTO clients (user_id)
+          VALUES ($1)
+        `,
+        [userId]
+      );
+
+      await this.linkAuthProvider({
+        userId,
+        provider: "google",
+        providerUserId,
+      }, client);
+
+      await client.query("COMMIT");
+      return this.findById(userId);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      if (
+        error.code === "23505" &&
+        (error.constraint === "users_email_unique_not_null" ||
+          error.detail?.includes("lower(email)") ||
+          error.detail?.includes("(email)"))
+      ) {
+        return this.findByEmail(normalizedEmail);
+      }
+
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   static async findClientByPhoneNumber(phoneNumber) {
     const normalizedPhone = normalizePhoneNumber(phoneNumber);
     if (!normalizedPhone) return null;
@@ -402,6 +534,27 @@ class AuthModel {
       `
         UPDATE users
         SET last_login_at = NOW()
+        WHERE id = $1
+        RETURNING id
+      `,
+      [userId]
+    );
+
+    if (!rows[0]) {
+      return null;
+    }
+
+    return this.findById(rows[0].id);
+  }
+
+  static async markEmailVerified(userId) {
+    const { rows } = await query(
+      `
+        UPDATE users
+        SET
+          email_verified = true,
+          email_verification_token = NULL,
+          email_verification_sent_at = NULL
         WHERE id = $1
         RETURNING id
       `,

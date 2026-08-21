@@ -23,6 +23,14 @@ const routes = [
     },
   },
   {
+    path: "/account-deletion",
+    name: "account-deletion",
+    component: () => import("../modules/public/views/AccountDeletionView.vue"),
+    meta: {
+      layout: "desktop",
+    },
+  },
+  {
     path: "/track/:token",
     name: "public-ride-tracking",
     component: () => import("../modules/public/views/PublicRideTrackingView.vue"),
