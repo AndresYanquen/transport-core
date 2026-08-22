@@ -26,7 +26,31 @@ async function listUsers(req, res, next) {
   }
 }
 
+async function listDriverApprovals(req, res, next) {
+  try {
+    const result = await AdminUsersService.listDriverApprovals(req.adminDriverApprovalsQuery);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function updateDriverApproval(req, res, next) {
+  try {
+    const result = await AdminUsersService.updateDriverApproval(
+      req.adminDriverId,
+      req.adminDriverApprovalPayload,
+      req.user.id
+    );
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   createUser,
+  listDriverApprovals,
   listUsers,
+  updateDriverApproval,
 };

@@ -16,13 +16,18 @@ import {
 import { computed, onMounted, ref } from "vue";
 import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 import goTaxiLogo from "../assets/images/logo/gottaxi.png";
+import MenuFavorites from "../components/MenuFavorites.vue";
 import { useAuthStore } from "../stores/auth.js";
+import { useDriverNotificationsStore } from "../stores/driverNotifications.js";
+import { useMenuFavoritesStore } from "../stores/menuFavorites.js";
 import { useOperatorNavigationStore } from "../stores/operatorNavigation.js";
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 const navigation = useOperatorNavigationStore();
+const driverNotifications = useDriverNotificationsStore();
+const menuFavorites = useMenuFavoritesStore();
 const sidebarOpen = ref(false);
 const sidebarCollapsed = ref(false);
 const openMenuCode = ref("");
@@ -101,11 +106,15 @@ function displayName() {
 async function logout() {
   auth.logout();
   navigation.resetMenu();
+  driverNotifications.resetDriverNotifications();
+  menuFavorites.resetFavorites();
   await router.replace({ name: "operator-login" });
 }
 
 onMounted(() => {
   navigation.fetchMenu().catch(() => {});
+  driverNotifications.refreshUnreadPanicCount().catch(() => {});
+  driverNotifications.connectDriverNotifications(auth.state.token);
 });
 </script>
 
@@ -268,22 +277,41 @@ onMounted(() => {
     </aside>
 
     <div :class="['transition-[padding] duration-200', sidebarCollapsed ? 'lg:pl-16' : 'lg:pl-72']">
-      <header class="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-slate-200 bg-white/95 px-4 backdrop-blur">
-        <button class="grid h-9 w-9 place-items-center rounded-md border border-slate-200 lg:hidden" type="button" @click="sidebarOpen = true">
-          <Menu class="h-4 w-4" />
-        </button>
-        <button
-          :aria-label="sidebarCollapsed ? 'Expandir menú lateral' : 'Contraer menú lateral'"
-          :title="sidebarCollapsed ? 'Expandir menú' : 'Contraer menú'"
-          class="hidden h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50 lg:grid"
-          type="button"
-          @click="toggleDesktopSidebar"
-        >
-          <Menu class="h-4 w-4" />
-        </button>
-        <div>
-          <div class="text-sm font-semibold">{{ activeRoot?.label || "Operación" }}</div>
-          <div class="text-xs text-slate-500">{{ route.path }}</div>
+      <header class="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-slate-200 bg-white/95 px-4 backdrop-blur">
+        <div class="flex min-w-0 items-center gap-3">
+          <button class="grid h-9 w-9 place-items-center rounded-md border border-slate-200 lg:hidden" type="button" @click="sidebarOpen = true">
+            <Menu class="h-4 w-4" />
+          </button>
+          <button
+            :aria-label="sidebarCollapsed ? 'Expandir menú lateral' : 'Contraer menú lateral'"
+            :title="sidebarCollapsed ? 'Expandir menú' : 'Contraer menú'"
+            class="hidden h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50 lg:grid"
+            type="button"
+            @click="toggleDesktopSidebar"
+          >
+            <Menu class="h-4 w-4" />
+          </button>
+          <div class="min-w-0">
+            <div class="truncate text-sm font-semibold">{{ activeRoot?.label || "Operación" }}</div>
+            <div class="truncate text-xs text-slate-500">{{ route.path }}</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <MenuFavorites role="operator" />
+          <RouterLink
+            class="relative grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50"
+            title="Alertas de pánico"
+            aria-label="Alertas de pánico"
+            to="/operator/operacion/incidentes/panico"
+          >
+            <Bell class="h-4 w-4" />
+            <span
+              v-if="driverNotifications.state.unreadPanicCount"
+              class="absolute -right-1 -top-1 min-w-5 rounded-full bg-red-600 px-1.5 text-center text-[11px] font-semibold leading-5 text-white"
+            >
+              {{ driverNotifications.state.unreadPanicCount > 99 ? "99+" : driverNotifications.state.unreadPanicCount }}
+            </span>
+          </RouterLink>
         </div>
       </header>
       <main class="min-h-[calc(100vh-56px)]"><RouterView /></main>

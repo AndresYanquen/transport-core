@@ -8,6 +8,7 @@ const { signJwt } = require("../utils/jwt");
 const { normalizePhoneNumber } = require("../utils/phone");
 const GoogleAuthService = require("./google-auth.service");
 const RefreshTokenService = require("./refresh-token.service");
+const SettingsService = require("../../settings/services/settings.service");
 
 const PASSWORD_SALT_ROUNDS = 12;
 const VERIFICATION_TOKEN_BYTES = 32;
@@ -240,6 +241,15 @@ async function registerUser({
         currentLocationLatLng: extractLatLng(driverProfile.currentLocation),
       }
     : undefined;
+
+  if (normalizedAccountType === "driver" && normalizedDriverProfile) {
+    const approvalPolicy = await SettingsService.getSettingValue(
+      "driver_creation_approval_policy",
+      "pending"
+    );
+    normalizedDriverProfile.approvalStatus =
+      approvalPolicy === "auto_approved" ? "approved" : "pending";
+  }
 
   const normalizedClientProfile = clientProfile
     ? {

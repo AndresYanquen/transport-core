@@ -28,6 +28,7 @@ const form = reactive({
   placesSearchSuffix: "",
   placesCountryBias: "",
   placesSearchRadiusMeters: "",
+  driverCreationApprovalPolicy: "pending",
 });
 
 const canSave = computed(() => {
@@ -48,6 +49,7 @@ const canSave = computed(() => {
     isText(form.placesSearchSuffix) &&
     /^[a-z]{2}$/.test(form.placesCountryBias.toLowerCase()) &&
     isNumberBetween(form.placesSearchRadiusMeters, 1000, 100000, true) &&
+    ["pending", "auto_approved"].includes(form.driverCreationApprovalPolicy) &&
     !state.saving
   );
 });
@@ -92,6 +94,7 @@ function applySettings(settings) {
   form.placesSearchSuffix = state.settings.operational_places_search_suffix?.value || "";
   form.placesCountryBias = state.settings.operational_places_country_bias?.value || "";
   form.placesSearchRadiusMeters = state.settings.operational_places_search_radius_meters?.value || "";
+  form.driverCreationApprovalPolicy = state.settings.driver_creation_approval_policy?.value || "pending";
 }
 
 async function fetchParameters() {
@@ -138,6 +141,7 @@ async function saveParameters() {
           operational_places_search_suffix: form.placesSearchSuffix,
           operational_places_country_bias: form.placesCountryBias.toLowerCase(),
           operational_places_search_radius_meters: Number(form.placesSearchRadiusMeters),
+          driver_creation_approval_policy: form.driverCreationApprovalPolicy,
         },
       },
     });
@@ -308,6 +312,42 @@ onMounted(fetchParameters);
             {{ state.settings.driver_request_search_radius_meters?.description }}
           </span>
         </label>
+
+        <div class="border-t border-slate-200 pt-5">
+          <h3 class="text-sm font-semibold text-slate-950">Aprobación de conductores</h3>
+          <p class="mt-1 text-sm text-slate-500">Define el estado inicial de los conductores creados por registro o por el panel.</p>
+        </div>
+
+        <div class="grid gap-3 md:grid-cols-2">
+          <label
+            :class="[
+              'flex cursor-pointer gap-3 rounded-md border p-4 text-sm',
+              form.driverCreationApprovalPolicy === 'pending'
+                ? 'border-amber-300 bg-amber-50 text-amber-950'
+                : 'border-slate-200 bg-white text-slate-700',
+            ]"
+          >
+            <input v-model="form.driverCreationApprovalPolicy" class="mt-1" type="radio" value="pending" />
+            <span>
+              <span class="block font-semibold">Crear como pendiente</span>
+              <span class="mt-1 block text-xs text-slate-500">Requiere revisión manual antes de recibir viajes.</span>
+            </span>
+          </label>
+          <label
+            :class="[
+              'flex cursor-pointer gap-3 rounded-md border p-4 text-sm',
+              form.driverCreationApprovalPolicy === 'auto_approved'
+                ? 'border-emerald-300 bg-emerald-50 text-emerald-950'
+                : 'border-slate-200 bg-white text-slate-700',
+            ]"
+          >
+            <input v-model="form.driverCreationApprovalPolicy" class="mt-1" type="radio" value="auto_approved" />
+            <span>
+              <span class="block font-semibold">Aprobar automáticamente</span>
+              <span class="mt-1 block text-xs text-slate-500">Los nuevos conductores quedan habilitados inmediatamente.</span>
+            </span>
+          </label>
+        </div>
       </div>
 
       <div class="mt-5 flex justify-end">

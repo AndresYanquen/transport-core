@@ -16,16 +16,40 @@ const shortcuts = computed(() =>
 );
 
 const cards = [
-  { label: "Solicitudes pendientes", value: "—", icon: Clock3, tone: "text-amber-700 bg-amber-50" },
-  { label: "Servicios activos", value: "—", icon: Car, tone: "text-blue-700 bg-blue-50" },
-  { label: "Conductores disponibles", value: "—", icon: UserCheck, tone: "text-emerald-700 bg-emerald-50" },
-  { label: "Alertas operativas", value: "—", icon: AlertTriangle, tone: "text-rose-700 bg-rose-50" },
+  {
+    label: "Solicitudes pendientes",
+    value: "—",
+    icon: Clock3,
+    card: "border-amber-100 bg-amber-50/45",
+    iconTone: "text-amber-700 bg-amber-100",
+  },
+  {
+    label: "Servicios activos",
+    value: "—",
+    icon: Car,
+    card: "border-blue-100 bg-blue-50/45",
+    iconTone: "text-blue-700 bg-blue-100",
+  },
+  {
+    label: "Conductores disponibles",
+    value: "—",
+    icon: UserCheck,
+    card: "border-emerald-100 bg-emerald-50/45",
+    iconTone: "text-emerald-700 bg-emerald-100",
+  },
+  {
+    label: "Alertas operativas",
+    value: "—",
+    icon: AlertTriangle,
+    card: "border-rose-100 bg-rose-50/45",
+    iconTone: "text-rose-700 bg-rose-100",
+  },
 ];
 </script>
 
 <template>
-  <section class="p-4 md:p-6">
-    <div class="rounded-lg bg-slate-950 p-6 text-white">
+  <section class="bg-slate-50 p-4 md:p-6">
+    <div class="rounded-md bg-slate-950 p-6 text-white shadow-sm">
       <div class="flex items-center gap-2 text-sm text-emerald-300">
         <Headset class="h-4 w-4" />
         Panel de operadora
@@ -40,8 +64,8 @@ const cards = [
     </div>
 
     <div class="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <article v-for="card in cards" :key="card.label" class="rounded-lg border border-slate-200 bg-white p-4">
-        <div :class="['grid h-9 w-9 place-items-center rounded-md', card.tone]">
+      <article v-for="card in cards" :key="card.label" :class="['rounded-md border p-4 shadow-sm', card.card]">
+        <div :class="['grid h-11 w-11 place-items-center rounded-md', card.iconTone]">
           <component :is="card.icon" class="h-4 w-4" />
         </div>
         <div class="mt-4 text-2xl font-semibold">{{ card.value }}</div>
@@ -50,7 +74,7 @@ const cards = [
     </div>
 
     <div class="mt-5 grid gap-5 lg:grid-cols-[1fr_0.65fr]">
-      <article class="rounded-lg border border-slate-200 bg-white p-5">
+      <article class="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
         <h2 class="font-semibold">Accesos de operación</h2>
         <p class="mt-1 text-sm text-slate-500">Opciones habilitadas desde la configuración de la base de datos.</p>
         <div class="mt-4 grid gap-3 sm:grid-cols-2">
@@ -66,7 +90,7 @@ const cards = [
         </div>
       </article>
 
-      <article class="rounded-lg border border-slate-200 bg-white p-5">
+      <article class="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
         <h2 class="font-semibold">Perfil del turno</h2>
         <dl class="mt-4 grid gap-3 text-sm">
           <div><dt class="text-slate-500">Código</dt><dd class="font-medium">{{ operatorProfile.employeeCode || "Sin asignar" }}</dd></div>

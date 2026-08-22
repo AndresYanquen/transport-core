@@ -20,6 +20,9 @@ const baseUserSelect = `
     u.phone_verification_sent_at,
     u.last_login_at,
     u.profile,
+    u.profile_image_url,
+    u.profile_image_key,
+    u.profile_image_updated_at,
     u.created_at,
     u.updated_at,
     u.deleted_at,
@@ -61,6 +64,10 @@ const baseUserSelect = `
     d.status AS driver_status,
     d.documents AS driver_documents,
     d.onboarded_at AS driver_onboarded_at,
+    d.approval_status AS driver_approval_status,
+    d.approval_notes AS driver_approval_notes,
+    d.reviewed_by_admin_id AS driver_reviewed_by_admin_id,
+    d.reviewed_at AS driver_reviewed_at,
     d.created_at AS driver_created_at,
     d.updated_at AS driver_updated_at,
     ST_AsGeoJSON(c.home_location)::json AS client_home_location,
@@ -429,7 +436,8 @@ class AuthModel {
               vehicle_plate,
               vehicle_type,
               documents,
-              current_location
+              current_location,
+              approval_status
             )
             VALUES (
               $1,
@@ -448,7 +456,8 @@ class AuthModel {
                   ST_MakePoint($11::double precision, $10::double precision),
                   4326
                 )::geography
-              END
+              END,
+              $12
             )
           `,
           [
@@ -463,6 +472,7 @@ class AuthModel {
             JSON.stringify(driverProfile.documents ?? {}),
             locationLat,
             locationLng,
+            driverProfile.approvalStatus || "pending",
           ]
         );
 
@@ -606,6 +616,10 @@ class AuthModel {
           documents: row.driver_documents,
           currentLocation: row.driver_current_location,
           onboardedAt: row.driver_onboarded_at,
+          approvalStatus: row.driver_approval_status,
+          approvalNotes: row.driver_approval_notes,
+          reviewedByAdminId: row.driver_reviewed_by_admin_id,
+          reviewedAt: row.driver_reviewed_at,
           createdAt: row.driver_created_at,
           updatedAt: row.driver_updated_at,
         }
@@ -623,6 +637,8 @@ class AuthModel {
       emailVerified: row.email_verified,
       phoneVerified: row.phone_verified,
       profile: userProfile,
+      profileImageUrl: row.profile_image_url,
+      profileImageUpdatedAt: row.profile_image_updated_at,
       clientProfile,
       driverProfile,
       emailVerificationSentAt: row.email_verification_sent_at,

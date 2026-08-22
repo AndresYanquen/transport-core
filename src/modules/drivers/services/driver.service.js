@@ -147,7 +147,10 @@ async function updateLocation(driverId, { currentLocationWkt, heading, speedKmh,
 }
 
 async function updateStatus(driverId, status) {
-  await ensureDriver(driverId);
+  const currentDriver = await ensureDriver(driverId);
+  if (status === "online" && currentDriver.approvalStatus !== "approved") {
+    throw createHttpError(403, "Driver must be approved before going online.");
+  }
 
   const driver = await DriverModel.updateStatus(driverId, status);
 
@@ -177,6 +180,12 @@ async function ensureDriverForUpdate(driverId, dbClient) {
 }
 
 async function setDriverStatus(driverId, status, dbClient) {
+  if (status === "online") {
+    const currentDriver = await ensureDriver(driverId, { dbClient });
+    if (currentDriver.approvalStatus !== "approved") {
+      throw createHttpError(403, "Driver must be approved before going online.");
+    }
+  }
   const driver = await DriverModel.updateStatus(driverId, status, dbClient);
   if (!driver) {
     throw createHttpError(500, "Failed to update driver status.");

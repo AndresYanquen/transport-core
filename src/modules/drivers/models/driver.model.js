@@ -34,6 +34,10 @@ const BASE_DRIVER_FIELDS = `
   d.offline_reason,
   d.documents,
   d.onboarded_at,
+  d.approval_status,
+  d.approval_notes,
+  d.reviewed_by_admin_id,
+  d.reviewed_at,
   d.created_at,
   d.updated_at,
   ST_AsGeoJSON(d.current_location)::json AS current_location_geojson,
@@ -88,6 +92,10 @@ function mapDriverRow(row) {
     offlineReason: row.offline_reason,
     documents: row.documents,
     onboardedAt: row.onboarded_at,
+    approvalStatus: row.approval_status,
+    approvalNotes: row.approval_notes,
+    reviewedByAdminId: row.reviewed_by_admin_id,
+    reviewedAt: row.reviewed_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     currentLocation,
@@ -236,6 +244,7 @@ async function findAvailableDriversNear(pointWkt, {
       FROM drivers d
       JOIN users u ON u.id = d.user_id
       WHERE d.status = 'online'
+        AND d.approval_status = 'approved'
         AND d.last_seen_at >= NOW() - ($2::double precision * INTERVAL '1 second')
         AND d.current_location IS NOT NULL
         AND ST_DWithin(d.current_location, ST_GeogFromText($1), $3)

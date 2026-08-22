@@ -19,13 +19,18 @@ import {
 import { computed, onMounted, ref } from "vue";
 import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 import goTaxiLogo from "../assets/images/logo/gottaxi.png";
+import MenuFavorites from "../components/MenuFavorites.vue";
 import { useAdminNavigationStore } from "../stores/adminNavigation.js";
 import { useAuthStore } from "../stores/auth.js";
+import { useDriverNotificationsStore } from "../stores/driverNotifications.js";
+import { useMenuFavoritesStore } from "../stores/menuFavorites.js";
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 const navigation = useAdminNavigationStore();
+const driverNotifications = useDriverNotificationsStore();
+const menuFavorites = useMenuFavoritesStore();
 const sidebarOpen = ref(false);
 const sidebarCollapsed = ref(false);
 const openMenuCode = ref("");
@@ -107,11 +112,15 @@ function userDisplayName(user) {
 async function logout() {
   auth.logout();
   navigation.resetMenu();
+  driverNotifications.resetDriverNotifications();
+  menuFavorites.resetFavorites();
   await router.replace({ name: "admin-login" });
 }
 
 onMounted(() => {
   navigation.fetchMenu().catch(() => {});
+  driverNotifications.refreshUnreadPanicCount().catch(() => {});
+  driverNotifications.connectDriverNotifications(auth.state.token);
 });
 </script>
 
@@ -299,6 +308,23 @@ onMounted(() => {
             <div class="truncate text-sm font-semibold text-slate-950">{{ activeRoot?.label || "Admin" }}</div>
             <div class="truncate text-xs text-slate-500">{{ route.path }}</div>
           </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <MenuFavorites role="admin" />
+          <RouterLink
+            class="relative grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50"
+            title="Alertas de pánico"
+            aria-label="Alertas de pánico"
+            to="/admin/operacion/incidentes/panico"
+          >
+            <Bell class="h-4 w-4" />
+            <span
+              v-if="driverNotifications.state.unreadPanicCount"
+              class="absolute -right-1 -top-1 min-w-5 rounded-full bg-red-600 px-1.5 text-center text-[11px] font-semibold leading-5 text-white"
+            >
+              {{ driverNotifications.state.unreadPanicCount > 99 ? "99+" : driverNotifications.state.unreadPanicCount }}
+            </span>
+          </RouterLink>
         </div>
       </header>
 

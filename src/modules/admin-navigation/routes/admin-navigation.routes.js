@@ -11,5 +11,7 @@ router.get(
   authorizeRoles("admin", "operator"),
   AdminNavigationController.getOperatorMenu
 );
+router.get("/favorites", authorizeRoles("admin", "operator"), AdminNavigationController.getFavorites);
+router.put("/favorites", authorizeRoles("admin", "operator"), AdminNavigationController.updateFavorites);
 
 module.exports = router;

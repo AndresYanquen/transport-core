@@ -96,6 +96,11 @@ const settingDefinitions = {
     max: 100000,
     description: "Radius in meters used to bias Google Places autocomplete.",
   },
+  driver_creation_approval_policy: {
+    type: "string",
+    allowedValues: ["pending", "auto_approved"],
+    description: "Controls whether newly created drivers require approval or are approved immediately.",
+  },
 };
 
 const operationalSettingKeys = Object.keys(settingDefinitions).filter((key) =>
@@ -114,6 +119,9 @@ function validateSettingValue(key, rawValue) {
   const transformed = definition.transform ? definition.transform(stringValue) : stringValue;
 
   if (definition.type === "string") {
+    if (definition.allowedValues && !definition.allowedValues.includes(transformed)) {
+      throwSettingError(key, `must be one of: ${definition.allowedValues.join(", ")}.`);
+    }
     if (definition.minLength && transformed.length < definition.minLength) {
       throwSettingError(key, `must be at least ${definition.minLength} characters.`);
     }

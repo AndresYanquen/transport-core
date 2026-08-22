@@ -1,22 +1,26 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { AlertTriangle, Ban, Clock3, Copy, FileText, RefreshCw, Search, ShieldAlert } from "lucide-vue-next";
+import { AlertTriangle, Ban, CheckCircle2, Clock3, Copy, FileText, RefreshCw, Search, ShieldAlert } from "lucide-vue-next";
 import { apiRequest } from "../../../services/api.js";
 import { createRealtimeSocket } from "../../../services/realtime.js";
 import { useAuthStore } from "../../../stores/auth.js";
+import { useDriverNotificationsStore } from "../../../stores/driverNotifications.js";
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
+const driverNotifications = useDriverNotificationsStore();
 
 const tabs = [
+  { key: "panic", slug: "panico", label: "Pánico", icon: AlertTriangle },
   { key: "reports", slug: "reportes", label: "Reportes", icon: FileText },
   { key: "complaints", slug: "quejas", label: "Quejas", icon: Ban },
   { key: "special_cases", slug: "casos-especiales", label: "Casos Especiales", icon: ShieldAlert },
 ];
 
 const tabAliases = {
+  panico: "panic",
   reportes: "reports",
   quejas: "complaints",
   "casos-especiales": "special_cases",
@@ -39,7 +43,10 @@ const statusMeta = {
 const state = reactive({
   loading: true,
   error: "",
+  notificationError: "",
   rides: [],
+  panicAlerts: [],
+  notificationActionId: "",
   lastUpdatedAt: null,
 });
 
@@ -52,7 +59,7 @@ let socket = null;
 let refreshTimer = null;
 
 function normalizeTab(value) {
-  return tabs.some((tab) => tab.key === value) ? value : "reports";
+  return tabs.some((tab) => tab.key === value) ? value : "panic";
 }
 
 function resolveRouteTab() {
@@ -77,17 +84,47 @@ async function fetchIncidents({ quiet = false } = {}) {
   }
 }
 
+async function fetchPanicAlerts({ quiet = false } = {}) {
+  if (!quiet) state.loading = true;
+  state.notificationError = "";
+
+  try {
+    const data = await apiRequest("/api/driver-notifications?status=unread&type=panic&limit=200", { method: "GET" });
+    const unread = data?.notifications || [];
+    const acknowledgedData = await apiRequest("/api/driver-notifications?status=acknowledged&type=panic&limit=200", { method: "GET" });
+    state.panicAlerts = [...unread, ...(acknowledgedData?.notifications || [])].sort(
+      (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime(),
+    );
+    state.lastUpdatedAt = new Date().toISOString();
+    driverNotifications.refreshUnreadPanicCount().catch(() => {});
+  } catch (err) {
+    state.notificationError = err?.message || "No se pudieron cargar las alertas de pánico.";
+  } finally {
+    state.loading = false;
+  }
+}
+
+async function refreshAll(options = {}) {
+  await Promise.all([fetchIncidents(options), fetchPanicAlerts(options)]);
+}
+
 function connectRealtime() {
   if (!auth.state.token || socket) return;
   socket = createRealtimeSocket(auth.state.token);
   socket.on("operations:ride-updated", () => fetchIncidents({ quiet: true }));
+  socket.on("operations:driver-panic-created", () => fetchPanicAlerts({ quiet: true }));
+  socket.on("operations:driver-notification-acknowledged", () => fetchPanicAlerts({ quiet: true }));
+  socket.on("operations:driver-notification-resolved", () => fetchPanicAlerts({ quiet: true }));
 }
 
 function setTab(tabKey) {
   const normalized = normalizeTab(tabKey);
   const tab = tabs.find((item) => item.key === normalized) || tabs[0];
   filters.tab = normalized;
-  router.replace(`/admin/operacion/incidentes/${tab.slug}`);
+  const prefix = String(auth.state.user?.role || "").toLowerCase() === "operator"
+    ? "/operator/operacion/incidentes"
+    : "/admin/operacion/incidentes";
+  router.replace(`${prefix}/${tab.slug}`);
 }
 
 function shortId(id) {
@@ -123,6 +160,63 @@ function personName(person) {
   if (person?.fullName) return person.fullName;
   const name = [person?.firstName, person?.lastName].filter(Boolean).join(" ").trim();
   return name || person?.email || "-";
+}
+
+function notificationDriverName(notification) {
+  return personName(notification?.driver);
+}
+
+function notificationLocation(notification) {
+  const location = notification?.metadata?.location;
+  if (!location) return "-";
+  const lat = Number(location.lat);
+  const lng = Number(location.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return "-";
+  return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+}
+
+function notificationStatusLabel(status) {
+  if (status === "unread") return "Sin reconocer";
+  if (status === "acknowledged") return "Reconocida";
+  if (status === "resolved") return "Resuelta";
+  return status || "-";
+}
+
+function notificationStatusClass(status) {
+  if (status === "unread") return "border-red-200 bg-red-50 text-red-700";
+  if (status === "acknowledged") return "border-amber-200 bg-amber-50 text-amber-800";
+  if (status === "resolved") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  return "border-slate-200 bg-white text-slate-600";
+}
+
+async function acknowledgeAlert(notification) {
+  if (!notification?.id) return;
+  state.notificationActionId = notification.id;
+  state.notificationError = "";
+
+  try {
+    await apiRequest(`/api/driver-notifications/${notification.id}/acknowledge`, { method: "PATCH" });
+    await fetchPanicAlerts({ quiet: true });
+  } catch (err) {
+    state.notificationError = err?.message || "No se pudo reconocer la alerta.";
+  } finally {
+    state.notificationActionId = "";
+  }
+}
+
+async function resolveAlert(notification) {
+  if (!notification?.id) return;
+  state.notificationActionId = notification.id;
+  state.notificationError = "";
+
+  try {
+    await apiRequest(`/api/driver-notifications/${notification.id}/resolve`, { method: "PATCH" });
+    await fetchPanicAlerts({ quiet: true });
+  } catch (err) {
+    state.notificationError = err?.message || "No se pudo resolver la alerta.";
+  } finally {
+    state.notificationActionId = "";
+  }
 }
 
 function formatDate(value) {
@@ -212,11 +306,29 @@ const currentRows = computed(() => {
   );
 });
 
+const currentPanicAlerts = computed(() => {
+  const query = filters.search.trim().toLowerCase();
+  const rows = query
+    ? state.panicAlerts.filter((notification) => [
+      notification.id,
+      notification.message,
+      notification.rideId,
+      notification.status,
+      notificationDriverName(notification),
+      notification.driver?.email,
+      notification.driver?.phoneNumber,
+      notificationLocation(notification),
+    ].filter(Boolean).join(" ").toLowerCase().includes(query))
+    : state.panicAlerts;
+
+  return rows.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+});
+
 const summary = computed(() => [
+  { label: "Alertas de pánico", value: state.panicAlerts.length, icon: AlertTriangle },
   { label: "Reportes", value: reports.value.length, icon: FileText },
   { label: "Quejas", value: complaints.value.length, icon: Ban },
   { label: "Casos especiales", value: specialCases.value.length, icon: ShieldAlert },
-  { label: "Espera > 10 min", value: state.rides.filter(isLongWait).length, icon: Clock3 },
 ]);
 
 watch(() => [route.params.incidentView, route.query.vista], () => {
@@ -225,9 +337,9 @@ watch(() => [route.params.incidentView, route.query.vista], () => {
 
 onMounted(() => {
   filters.tab = resolveRouteTab();
-  fetchIncidents();
+  refreshAll();
   connectRealtime();
-  refreshTimer = window.setInterval(() => fetchIncidents({ quiet: true }), 30000);
+  refreshTimer = window.setInterval(() => refreshAll({ quiet: true }), 30000);
 });
 
 onBeforeUnmount(() => {
@@ -249,7 +361,7 @@ onBeforeUnmount(() => {
         class="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
         :disabled="state.loading"
         type="button"
-        @click="fetchIncidents"
+        @click="refreshAll"
       >
         <RefreshCw class="h-4 w-4" />
         Actualizar
@@ -258,6 +370,9 @@ onBeforeUnmount(() => {
 
     <div v-if="state.error" class="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
       {{ state.error }}
+    </div>
+    <div v-if="state.notificationError" class="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+      {{ state.notificationError }}
     </div>
 
     <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -280,7 +395,7 @@ onBeforeUnmount(() => {
           <div>
             <h2 class="text-base font-semibold text-slate-950">{{ activeTab.label }}</h2>
             <p class="text-sm text-slate-500">
-              {{ currentRows.length }} visibles
+              {{ activeTab.key === "panic" ? currentPanicAlerts.length : currentRows.length }} visibles
               <span v-if="state.lastUpdatedAt"> · actualizado {{ formatDate(state.lastUpdatedAt) }}</span>
             </p>
           </div>
@@ -311,7 +426,92 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div class="overflow-auto">
+      <div v-if="activeTab.key === 'panic'" class="overflow-auto">
+        <table class="w-full min-w-[1120px] border-collapse text-sm">
+          <thead>
+            <tr class="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+              <th class="py-2 pl-4 pr-3">Alerta</th>
+              <th class="py-2 pr-3">Estado</th>
+              <th class="py-2 pr-3">Conductor</th>
+              <th class="py-2 pr-3">Teléfono</th>
+              <th class="py-2 pr-3">Ubicación</th>
+              <th class="py-2 pr-3">Viaje</th>
+              <th class="py-2 pr-3">Tiempo</th>
+              <th class="py-2 pr-4 text-right">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="notification in currentPanicAlerts" :key="notification.id" class="border-b border-slate-100 text-slate-700">
+              <td class="py-3 pl-4 pr-3">
+                <div class="flex items-center gap-1">
+                  <span class="font-mono text-xs font-medium text-slate-950">#{{ shortId(notification.id) }}</span>
+                  <button
+                    class="grid h-6 w-6 place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-900"
+                    type="button"
+                    title="Copiar ID de alerta"
+                    aria-label="Copiar ID de alerta"
+                    @click="copyText(notification.id)"
+                  >
+                    <Copy class="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div class="mt-1 max-w-[260px] truncate text-xs text-slate-500" :title="notification.message">
+                  {{ notification.message }}
+                </div>
+              </td>
+              <td class="py-3 pr-3">
+                <span :class="['inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold', notificationStatusClass(notification.status)]">
+                  {{ notificationStatusLabel(notification.status) }}
+                </span>
+              </td>
+              <td class="py-3 pr-3">
+                <div class="font-medium text-slate-950">{{ notificationDriverName(notification) }}</div>
+                <div class="text-xs text-slate-500">{{ notification.driver?.email || "-" }}</div>
+              </td>
+              <td class="py-3 pr-3">{{ notification.driver?.phoneNumber || "-" }}</td>
+              <td class="py-3 pr-3">
+                <span class="font-mono text-xs">{{ notificationLocation(notification) }}</span>
+              </td>
+              <td class="py-3 pr-3">
+                <span class="font-mono text-xs">{{ shortId(notification.rideId) }}</span>
+              </td>
+              <td class="py-3 pr-3">
+                <div>{{ formatAge(notification.createdAt) }}</div>
+                <div class="text-xs text-slate-500">{{ formatDate(notification.createdAt) }}</div>
+              </td>
+              <td class="py-3 pr-4">
+                <div class="flex justify-end gap-2">
+                  <button
+                    class="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    :disabled="notification.status !== 'unread' || state.notificationActionId === notification.id"
+                    type="button"
+                    @click="acknowledgeAlert(notification)"
+                  >
+                    <CheckCircle2 class="h-3.5 w-3.5" />
+                    Reconocer
+                  </button>
+                  <button
+                    class="inline-flex h-8 items-center gap-1.5 rounded-md bg-slate-950 px-2.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+                    :disabled="notification.status === 'resolved' || state.notificationActionId === notification.id"
+                    type="button"
+                    @click="resolveAlert(notification)"
+                  >
+                    Resolver
+                  </button>
+                </div>
+              </td>
+            </tr>
+            <tr v-if="!state.loading && currentPanicAlerts.length === 0">
+              <td class="py-10 text-center text-slate-500" colspan="8">No hay alertas de pánico activas.</td>
+            </tr>
+            <tr v-if="state.loading">
+              <td class="py-10 text-center text-slate-500" colspan="8">Cargando alertas...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div v-else class="overflow-auto">
         <table class="w-full min-w-[1120px] border-collapse text-sm">
           <thead>
             <tr class="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">

@@ -68,6 +68,24 @@ const routes = [
     },
   },
   {
+    path: "/operator/operacion/incidentes/:incidentView?",
+    name: "operator-operation-incidents",
+    component: () => import("../modules/admin/views/AdminOperationIncidentsView.vue"),
+    meta: {
+      layout: "desktop",
+      operatorShell: true,
+      requiresAuth: true,
+      requiresOperator: true,
+    },
+  },
+  {
+    path: "/operator/incidentes/:incidentView?",
+    redirect: (to) => ({
+      name: "operator-operation-incidents",
+      params: { incidentView: to.params.incidentView },
+    }),
+  },
+  {
     path: "/operator/operacion/:operationView?",
     name: "operator-operation",
     component: () => import("../modules/operator/views/OperatorOperationView.vue"),
@@ -192,6 +210,10 @@ const routes = [
     redirect: { name: "admin-dashboard" },
   },
   {
+    path: "/admin/conductores",
+    redirect: { name: "admin-drivers-list" },
+  },
+  {
     path: "/admin/seguridad/usuarios",
     name: "admin-users",
     component: () => import("../modules/admin/views/AdminUsersView.vue"),
@@ -207,6 +229,17 @@ const routes = [
     name: "admin-drivers-list",
     alias: "/admin/conductores/listado",
     component: () => import("../modules/admin/views/AdminDriversListView.vue"),
+    meta: {
+      layout: "desktop",
+      adminShell: true,
+      requiresAuth: true,
+      requiresAdmin: true,
+    },
+  },
+  {
+    path: "/admin/conductores/aprobaciones",
+    name: "admin-driver-approvals",
+    component: () => import("../modules/admin/views/AdminDriverApprovalsView.vue"),
     meta: {
       layout: "desktop",
       adminShell: true,
@@ -409,6 +442,10 @@ const routes = [
       requiresAuth: true,
       requiresAdmin: true,
     },
+  },
+  {
+    path: "/admin/configuracion",
+    redirect: { name: "admin-operational-parameters" },
   },
   {
     path: "/admin/configuracion/operational-parameters",

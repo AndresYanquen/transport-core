@@ -7,6 +7,20 @@ const AdminUsersMiddleware = require("../middleware/admin-users.middleware");
 const router = Router();
 
 router.get(
+  "/drivers/approvals",
+  authorizeRoles("admin"),
+  AdminUsersMiddleware.validateListDriverApprovals,
+  AdminUsersController.listDriverApprovals
+);
+
+router.patch(
+  "/drivers/:driverId/approval",
+  authorizeRoles("admin"),
+  AdminUsersMiddleware.validateDriverApproval,
+  AdminUsersController.updateDriverApproval
+);
+
+router.get(
   "/",
   authorizeRoles("admin", "operator"),
   AdminUsersMiddleware.validateListUsers,

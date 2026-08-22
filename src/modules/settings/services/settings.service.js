@@ -61,6 +61,11 @@ async function getNumberSetting(
   return value;
 }
 
+async function getSettingValue(key, fallback = "", { ttlMs = DEFAULT_CACHE_TTL_MS } = {}) {
+  const setting = await getSetting(key, { ttlMs });
+  return setting?.value ?? fallback;
+}
+
 async function getSettings(keys, { ttlMs = DEFAULT_CACHE_TTL_MS } = {}) {
   const entries = await Promise.all(
     keys.map(async (key) => [key, await getSetting(key, { ttlMs })])
@@ -117,5 +122,6 @@ module.exports = {
   getSettings,
   getOperationalSettings,
   getNumberSetting,
+  getSettingValue,
   clearCache,
 };

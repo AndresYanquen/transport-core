@@ -182,6 +182,20 @@ const env = {
     mapsApiKey: process.env.GOOGLE_MAPS_API_KEY || "",
     clientId: process.env.GOOGLE_CLIENT_ID || "",
   },
+  storage: {
+    r2: {
+      accountId: process.env.R2_ACCOUNT_ID || "",
+      accessKeyId: process.env.R2_ACCESS_KEY_ID || "",
+      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || "",
+      bucket: process.env.R2_BUCKET || "",
+      endpoint:
+        process.env.R2_ENDPOINT ||
+        (process.env.R2_ACCOUNT_ID
+          ? `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`
+          : ""),
+      publicBaseUrl: String(process.env.R2_PUBLIC_BASE_URL || "").replace(/\/+$/, ""),
+    },
+  },
 };
 
 module.exports = { env, formatPostgresSearchPath };
