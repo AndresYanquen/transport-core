@@ -9,6 +9,9 @@ const router = Router();
 router.post("/signup", validateAuth.signup, AuthController.signup);
 router.post("/login", validateAuth.login, AuthController.login);
 router.post("/google", validateAuth.google, AuthController.google);
+router.post("/refresh", validateAuth.refresh, AuthController.refresh);
+router.post("/logout", validateAuth.logout, AuthController.logout);
+router.post("/logout-all", authenticate, AuthController.logoutAll);
 router.get("/me", authenticate, AuthController.me);
 
 module.exports = router;

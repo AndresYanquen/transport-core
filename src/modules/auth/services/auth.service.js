@@ -7,6 +7,7 @@ const { logger } = require("../../../config/logger");
 const { signJwt } = require("../utils/jwt");
 const { normalizePhoneNumber } = require("../utils/phone");
 const GoogleAuthService = require("./google-auth.service");
+const RefreshTokenService = require("./refresh-token.service");
 
 const PASSWORD_SALT_ROUNDS = 12;
 const VERIFICATION_TOKEN_BYTES = 32;
@@ -122,15 +123,8 @@ async function ensureGoogleProviderLink(userRow, providerUserId) {
   throw error;
 }
 
-async function buildLoginSession(userRow, { rememberMe = false } = {}) {
-  assertUserCanLogin(userRow);
-
-  const updatedRow = await AuthModel.updateLastLogin(userRow.id);
-  const user = AuthModel.toPublicUser(updatedRow ?? userRow);
-
-  const accessTokenExpiresInSeconds = rememberMe
-    ? env.security.jwtRememberMeExpiresInSeconds
-    : env.security.jwtExpiresInSeconds;
+function signAccessToken(user) {
+  const accessTokenExpiresInSeconds = env.security.jwtExpiresInSeconds;
 
   const accessToken = signJwt(
     {
@@ -146,9 +140,46 @@ async function buildLoginSession(userRow, { rememberMe = false } = {}) {
   );
 
   return {
-    user,
-    token: accessToken,
+    accessToken,
     expiresIn: accessTokenExpiresInSeconds,
+  };
+}
+
+async function buildLoginSession(userRow, {
+  rememberMe = false,
+  metadata = {},
+  refreshToken,
+  refreshExpiresIn,
+  updateLastLogin = true,
+} = {}) {
+  assertUserCanLogin(userRow);
+
+  const updatedRow = updateLastLogin
+    ? await AuthModel.updateLastLogin(userRow.id)
+    : userRow;
+  const user = AuthModel.toPublicUser(updatedRow ?? userRow);
+
+  const signedAccessToken = signAccessToken(user);
+  let resolvedRefreshToken = refreshToken;
+  let resolvedRefreshExpiresIn = refreshExpiresIn;
+
+  if (!resolvedRefreshToken) {
+    const issuedRefreshToken = await RefreshTokenService.issueRefreshToken({
+      userId: user.id,
+      rememberMe,
+      metadata,
+    });
+    resolvedRefreshToken = issuedRefreshToken.refreshToken;
+    resolvedRefreshExpiresIn = issuedRefreshToken.refreshExpiresIn;
+  }
+
+  return {
+    user,
+    token: signedAccessToken.accessToken,
+    accessToken: signedAccessToken.accessToken,
+    refreshToken: resolvedRefreshToken,
+    expiresIn: signedAccessToken.expiresIn,
+    refreshExpiresIn: resolvedRefreshExpiresIn,
     rememberMe: Boolean(rememberMe),
   };
 }
@@ -248,7 +279,7 @@ async function registerUser({
   };
 }
 
-async function loginUser({ email, password, rememberMe = false }) {
+async function loginUser({ email, password, rememberMe = false }, metadata = {}) {
   const userRow = await AuthModel.findByEmail(email);
 
   if (!userRow || !userRow.password_hash) {
@@ -268,10 +299,10 @@ async function loginUser({ email, password, rememberMe = false }) {
     throw error;
   }
 
-  return buildLoginSession(userRow, { rememberMe });
+  return buildLoginSession(userRow, { rememberMe, metadata });
 }
 
-async function loginWithGoogle({ idToken, rememberMe = false }) {
+async function loginWithGoogle({ idToken, rememberMe = false }, metadata = {}) {
   let googleIdentity;
   try {
     googleIdentity = await GoogleAuthService.verifyGoogleIdToken(idToken);
@@ -292,7 +323,7 @@ async function loginWithGoogle({ idToken, rememberMe = false }) {
       userId: userRow.id,
       provider: "google",
     });
-    return buildLoginSession(userRow, { rememberMe });
+    return buildLoginSession(userRow, { rememberMe, metadata });
   }
 
   userRow = await AuthModel.findByEmail(googleIdentity.email);
@@ -306,7 +337,7 @@ async function loginWithGoogle({ idToken, rememberMe = false }) {
       provider: "google",
     });
 
-    return buildLoginSession(userRow, { rememberMe });
+    return buildLoginSession(userRow, { rememberMe, metadata });
   }
 
   const { firstName, lastName } = splitDisplayName(googleIdentity.name);
@@ -331,7 +362,39 @@ async function loginWithGoogle({ idToken, rememberMe = false }) {
     provider: "google",
   });
 
-  return buildLoginSession(userRow, { rememberMe });
+  return buildLoginSession(userRow, { rememberMe, metadata });
+}
+
+async function refreshSession({ refreshToken, rememberMe = false }, metadata = {}) {
+  const rotatedToken = await RefreshTokenService.rotateRefreshToken({
+    refreshToken,
+    rememberMe,
+    metadata,
+  });
+
+  return buildLoginSession(rotatedToken.userRow, {
+    rememberMe,
+    metadata,
+    refreshToken: rotatedToken.refreshToken,
+    refreshExpiresIn: rotatedToken.refreshExpiresIn,
+    updateLastLogin: false,
+  });
+}
+
+async function logoutUser({ refreshToken }) {
+  await RefreshTokenService.revokeRefreshToken(refreshToken, "logout");
+  return { success: true };
+}
+
+async function logoutAll(authenticatedUser) {
+  if (!authenticatedUser?.id) {
+    const error = new Error("Unauthorized");
+    error.status = 401;
+    throw error;
+  }
+
+  await RefreshTokenService.revokeAllForUser(authenticatedUser.id, "logout_all");
+  return { success: true };
 }
 
 async function getCurrentUser(authenticatedUser) {
@@ -350,6 +413,10 @@ module.exports = {
   registerUser,
   loginUser,
   loginWithGoogle,
+  refreshSession,
+  logoutUser,
+  logoutAll,
   getCurrentUser,
   buildLoginSession,
+  signAccessToken,
 };

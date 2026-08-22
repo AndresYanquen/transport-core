@@ -110,8 +110,30 @@ function validateGoogleLogin(req, res, next) {
   next();
 }
 
+function validateRefreshToken(req, res, next) {
+  const { refreshToken, rememberMe } = req.body || {};
+
+  if (!refreshToken) {
+    return res.status(400).json({ message: "refreshToken is required." });
+  }
+
+  if (typeof refreshToken !== "string") {
+    return res.status(400).json({ message: "refreshToken must be a string." });
+  }
+
+  if (rememberMe !== undefined && typeof rememberMe !== "boolean") {
+    return res.status(400).json({
+      message: "rememberMe must be a boolean when provided.",
+    });
+  }
+
+  next();
+}
+
 module.exports = {
   signup: validateSignup,
   login: validateLogin,
   google: validateGoogleLogin,
+  refresh: validateRefreshToken,
+  logout: validateRefreshToken,
 };

@@ -60,8 +60,12 @@ Set these variables in the hosting platform before starting the API:
 - `DB_SSL=true`
 - `DB_SEARCH_PATH=public,extensions`
 - `JWT_SECRET`
+- `JWT_ACCESS_TTL_SECONDS`
+- `REFRESH_TOKEN_TTL_SECONDS`
+- `REFRESH_TOKEN_REMEMBER_ME_TTL_SECONDS`
 - `CORS_ALLOWED_ORIGINS`
 - `VITE_API_BASE_URL`
+- `GOOGLE_CLIENT_ID`
 
 `REDIS_URL` and `PORT` are set by `docker-compose.yml` for Coolify. `JWT_SECRET`, database settings, and `CORS_ALLOWED_ORIGINS` are validated at startup in production. The process exits if any are missing.
 
@@ -78,6 +82,7 @@ Optional deployment tuning variables:
 - `REDIS_CONNECT_TIMEOUT_MS`
 - `REDIS_MAX_RECONNECT_DELAY_MS`
 - `GOOGLE_MAPS_API_KEY`
+- `REFRESH_TOKEN_BYTES`
 
 ## Release order
 

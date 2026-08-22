@@ -147,6 +147,15 @@ const env = {
       process.env.JWT_REMEMBER_ME_TTL_SECONDS,
       2592000
     ),
+    refreshTokenTtlSeconds: parseNumber(
+      process.env.REFRESH_TOKEN_TTL_SECONDS,
+      604800
+    ),
+    refreshTokenRememberMeTtlSeconds: parseNumber(
+      process.env.REFRESH_TOKEN_REMEMBER_ME_TTL_SECONDS,
+      2592000
+    ),
+    refreshTokenBytes: parseNumber(process.env.REFRESH_TOKEN_BYTES, 64),
   },
   realtime: {
     enabled: parseBoolean(process.env.SOCKET_ENABLED, true),
