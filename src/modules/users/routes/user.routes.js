@@ -36,6 +36,12 @@ router.use((error, _req, res, next) => {
     });
   }
 
+  if (/multipart/i.test(String(error?.message || ""))) {
+    return res.status(400).json({
+      message: "Invalid multipart/form-data request. Do not set Content-Type manually; let the client include the boundary.",
+    });
+  }
+
   return next(error);
 });
 

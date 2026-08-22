@@ -91,7 +91,7 @@ async function getSnapshot(filters = {}) {
         SELECT
           r.id, r.status, r.service_type, r.pickup_address, r.requested_at, r.updated_at,
           ST_AsGeoJSON(r.pickup_point::geometry)::json AS pickup_geojson,
-          u.first_name, u.last_name,
+          u.first_name, u.last_name, u.profile_image_url,
           st.name AS service_name, st.color AS service_color,
           z.id AS zone_id, z.name AS zone_name
         FROM rides r
@@ -120,7 +120,7 @@ async function getSnapshot(filters = {}) {
           d.vehicle_color, d.vehicle_plate, d.status, d.availability_intent,
           d.last_seen_at, d.offline_reason, d.updated_at,
           ST_AsGeoJSON(d.current_location::geometry)::json AS location_geojson,
-          u.first_name, u.last_name,
+          u.first_name, u.last_name, u.profile_image_url,
           z.id AS zone_id, z.name AS zone_name
         FROM drivers d
         JOIN users u ON u.id = d.user_id
@@ -196,6 +196,7 @@ async function getSnapshot(filters = {}) {
       pickupAddress: row.pickup_address,
       pickupLocation: mapPoint(row.pickup_geojson),
       clientName: abbreviatedName(row.first_name, row.last_name),
+      clientProfileImageUrl: row.profile_image_url || null,
       zoneId: row.zone_id || null,
       zoneName: row.zone_name || "Fuera de zona",
       requestedAt: row.requested_at,
@@ -204,6 +205,7 @@ async function getSnapshot(filters = {}) {
     drivers: driversResult.rows.map((row) => ({
       userId: row.user_id,
       name: abbreviatedName(row.first_name, row.last_name),
+      profileImageUrl: row.profile_image_url || null,
       status: row.status,
       availabilityIntent: row.availability_intent,
       lastSeenAt: row.last_seen_at,

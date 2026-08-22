@@ -47,3 +47,23 @@ test("profile image validation rejects mismatched content", () => {
     (error) => error.status === 400 && /does not match/.test(error.message)
   );
 });
+
+test("profile image maps missing migration database errors to 503", () => {
+  const mapped = ProfileImageService.__private.mapDatabaseError({
+    code: "42703",
+    message: "column users.profile_image_key does not exist",
+  });
+
+  assert.equal(mapped.status, 503);
+  assert.match(mapped.message, /migration/);
+});
+
+test("profile image maps storage failures to 502", () => {
+  const mapped = ProfileImageService.__private.mapStorageError(
+    new Error("AccessDenied"),
+    "put_object"
+  );
+
+  assert.equal(mapped.status, 502);
+  assert.match(mapped.message, /storage/);
+});

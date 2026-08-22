@@ -46,7 +46,8 @@ const BASE_DRIVER_FIELDS = `
   u.email,
   u.first_name,
   u.last_name,
-  u.phone_number
+  u.phone_number,
+  u.profile_image_url
 `;
 
 function getExecutor(dbClient) {
@@ -106,6 +107,7 @@ function mapDriverRow(row) {
       firstName: row.first_name,
       lastName: row.last_name,
       phoneNumber: row.phone_number,
+      profileImageUrl: row.profile_image_url,
     },
     distanceMeters:
       row.distance_meters !== undefined && row.distance_meters !== null

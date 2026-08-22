@@ -3,6 +3,7 @@ const { DeleteObjectCommand, PutObjectCommand } = require("@aws-sdk/client-s3");
 
 const AuthModel = require("../../auth/models/auth.model");
 const { env } = require("../../../config");
+const { logger } = require("../../../config/logger");
 const { query } = require("../../../config/database");
 const { getR2Client } = require("../../../config/storage");
 
@@ -68,21 +69,47 @@ function publicUrlForKey(key) {
   return `${env.storage.r2.publicBaseUrl}/${key}`;
 }
 
+function mapDatabaseError(error) {
+  if (error?.code === "42703" && /profile_image_/.test(String(error.message || ""))) {
+    return httpError(503, "Profile image database migration has not been applied.");
+  }
+
+  return error;
+}
+
+function mapStorageError(error, operation) {
+  if (error?.status) return error;
+
+  logger.error("profile_image_storage_error", {
+    operation,
+    error,
+    bucket: env.storage.r2.bucket,
+  });
+
+  return httpError(502, "Profile image storage request failed.");
+}
+
 async function updateUserProfileImage(userId, { key, url }) {
-  const { rows } = await query(
-    `
-      UPDATE users
-      SET
-        profile_image_key = $2,
-        profile_image_url = $3,
-        profile_image_updated_at = NOW(),
-        updated_at = NOW()
-      WHERE id = $1
-        AND deleted_at IS NULL
-      RETURNING id
-    `,
-    [userId, key, url]
-  );
+  let rows;
+  try {
+    const result = await query(
+      `
+        UPDATE users
+        SET
+          profile_image_key = $2,
+          profile_image_url = $3,
+          profile_image_updated_at = NOW(),
+          updated_at = NOW()
+        WHERE id = $1
+          AND deleted_at IS NULL
+        RETURNING id
+      `,
+      [userId, key, url]
+    );
+    rows = result.rows;
+  } catch (error) {
+    throw mapDatabaseError(error);
+  }
 
   if (!rows[0]) {
     throw httpError(404, "User not found.");
@@ -92,20 +119,26 @@ async function updateUserProfileImage(userId, { key, url }) {
 }
 
 async function clearUserProfileImage(userId) {
-  const { rows } = await query(
-    `
-      UPDATE users
-      SET
-        profile_image_key = NULL,
-        profile_image_url = NULL,
-        profile_image_updated_at = NOW(),
-        updated_at = NOW()
-      WHERE id = $1
-        AND deleted_at IS NULL
-      RETURNING id
-    `,
-    [userId]
-  );
+  let rows;
+  try {
+    const result = await query(
+      `
+        UPDATE users
+        SET
+          profile_image_key = NULL,
+          profile_image_url = NULL,
+          profile_image_updated_at = NOW(),
+          updated_at = NOW()
+        WHERE id = $1
+          AND deleted_at IS NULL
+        RETURNING id
+      `,
+      [userId]
+    );
+    rows = result.rows;
+  } catch (error) {
+    throw mapDatabaseError(error);
+  }
 
   if (!rows[0]) {
     throw httpError(404, "User not found.");
@@ -124,7 +157,9 @@ async function deleteObjectBestEffort(key) {
         Key: key,
       })
     );
-  } catch (_error) {}
+  } catch (error) {
+    logger.warn("profile_image_delete_old_failed", { key, error });
+  }
 }
 
 async function uploadProfileImage(user, file) {
@@ -137,15 +172,19 @@ async function uploadProfileImage(user, file) {
   }
 
   const key = buildProfileImageKey(user.id, file.mimetype);
-  await getR2Client().send(
-    new PutObjectCommand({
-      Bucket: env.storage.r2.bucket,
-      Key: key,
-      Body: file.buffer,
-      ContentType: file.mimetype,
-      CacheControl: "public, max-age=31536000, immutable",
-    })
-  );
+  try {
+    await getR2Client().send(
+      new PutObjectCommand({
+        Bucket: env.storage.r2.bucket,
+        Key: key,
+        Body: file.buffer,
+        ContentType: file.mimetype,
+        CacheControl: "public, max-age=31536000, immutable",
+      })
+    );
+  } catch (error) {
+    throw mapStorageError(error, "put_object");
+  }
 
   const updatedRow = await updateUserProfileImage(user.id, {
     key,
@@ -182,6 +221,8 @@ module.exports = {
   __private: {
     allowedImageTypes,
     buildProfileImageKey,
+    mapDatabaseError,
+    mapStorageError,
     validateImageFile,
   },
 };

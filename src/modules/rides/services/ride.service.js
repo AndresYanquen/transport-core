@@ -330,6 +330,7 @@ function buildPublicTrackingRide(ride) {
       ? {
           firstName: ride.driver.firstName,
           fullName: ride.driver.fullName,
+          profileImageUrl: ride.driver.profileImageUrl,
           vehicleMake: ride.driver.vehicleMake,
           vehicleModel: ride.driver.vehicleModel,
           vehicleYear: ride.driver.vehicleYear,
@@ -1732,6 +1733,19 @@ async function listRides(filters = {}, viewer = null) {
   if (normalizedFilters.includePassenger !== undefined) {
     const includePassengerRaw = String(normalizedFilters.includePassenger).toLowerCase();
     normalizedFilters.includePassenger = ["1", "true", "yes"].includes(includePassengerRaw);
+  }
+
+  if (normalizedFilters.includeDriver !== undefined) {
+    const includeDriverRaw = String(normalizedFilters.includeDriver).toLowerCase();
+    normalizedFilters.includeDriver = ["1", "true", "yes"].includes(includeDriverRaw);
+  }
+
+  if (viewer?.role === "driver") {
+    normalizedFilters.includePassenger = true;
+  }
+
+  if (viewer?.role === "client") {
+    normalizedFilters.includeDriver = true;
   }
 
   const rows = await RideModel.listRides(normalizedFilters);

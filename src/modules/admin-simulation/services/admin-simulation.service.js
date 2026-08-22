@@ -75,6 +75,7 @@ async function getSimulationState({ limit = 200, from = null, to = null } = {}) 
       u.email,
       u.first_name,
       u.last_name,
+      u.profile_image_url,
       (
         SELECT r.id
         FROM rides r
@@ -98,9 +99,11 @@ async function getSimulationState({ limit = 200, from = null, to = null } = {}) 
       uc.email AS client_email,
       uc.first_name AS client_first_name,
       uc.last_name AS client_last_name,
+      uc.profile_image_url AS client_profile_image_url,
       ud.email AS driver_email,
       ud.first_name AS driver_first_name,
-      ud.last_name AS driver_last_name
+      ud.last_name AS driver_last_name,
+      ud.profile_image_url AS driver_profile_image_url
     FROM rides r
     JOIN users uc ON uc.id = r.client_id
     LEFT JOIN users ud ON ud.id = r.driver_id
@@ -150,6 +153,7 @@ async function getSimulationState({ limit = 200, from = null, to = null } = {}) 
         email,
         firstName: row.first_name || "",
         lastName: row.last_name || "",
+        profileImageUrl: row.profile_image_url || null,
       },
       isSimUser,
     };
@@ -184,12 +188,14 @@ async function getSimulationState({ limit = 200, from = null, to = null } = {}) 
         email: row.client_email,
         firstName: row.client_first_name,
         lastName: row.client_last_name,
+        profileImageUrl: row.client_profile_image_url,
       },
       driver: row.driver_id
         ? {
             email: row.driver_email,
             firstName: row.driver_first_name,
             lastName: row.driver_last_name,
+            profileImageUrl: row.driver_profile_image_url,
           }
         : null,
     };

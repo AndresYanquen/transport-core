@@ -37,6 +37,7 @@ function mapNotificationWithDriver(row) {
       lastName: row.driver_last_name,
       email: row.driver_email,
       phoneNumber: row.driver_phone_number,
+      profileImageUrl: row.driver_profile_image_url,
     },
   };
 }
@@ -116,7 +117,8 @@ async function list({ status = "unread", type = null, limit = 100 } = {}) {
         u.first_name AS driver_first_name,
         u.last_name AS driver_last_name,
         u.email AS driver_email,
-        u.phone_number AS driver_phone_number
+        u.phone_number AS driver_phone_number,
+        u.profile_image_url AS driver_profile_image_url
       FROM driver_notifications dn
       JOIN users u ON u.id = dn.driver_id
       WHERE dn.status = $1

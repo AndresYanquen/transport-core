@@ -267,6 +267,7 @@ class RideModel {
           du.last_name AS driver_last_name,
           du.email AS driver_email,
           du.phone_number AS driver_phone_number,
+          du.profile_image_url AS driver_profile_image_url,
           d.vehicle_make AS driver_vehicle_make,
           d.vehicle_model AS driver_vehicle_model,
           d.vehicle_year AS driver_vehicle_year,
@@ -302,7 +303,8 @@ class RideModel {
           cu.first_name AS client_first_name,
           cu.last_name AS client_last_name,
           cu.email AS client_email,
-          cu.phone_number AS client_phone_number`
+          cu.phone_number AS client_phone_number,
+          cu.profile_image_url AS client_profile_image_url`
       : "";
 
     const passengerJoin = includePassenger
@@ -338,6 +340,7 @@ class RideModel {
       ? `,
           du.first_name AS driver_first_name,
           du.last_name AS driver_last_name,
+          du.profile_image_url AS driver_profile_image_url,
           d.vehicle_make AS driver_vehicle_make,
           d.vehicle_model AS driver_vehicle_model,
           d.vehicle_year AS driver_vehicle_year,
@@ -554,7 +557,8 @@ class RideModel {
         row.client_first_name !== undefined ||
         row.client_last_name !== undefined ||
         row.client_email !== undefined ||
-        row.client_phone_number !== undefined
+        row.client_phone_number !== undefined ||
+        row.client_profile_image_url !== undefined
           ? {
               firstName: row.client_first_name ?? null,
               lastName: row.client_last_name ?? null,
@@ -564,6 +568,7 @@ class RideModel {
                 .trim() || null,
               email: row.client_email ?? null,
               phoneNumber: row.client_phone_number ?? null,
+              profileImageUrl: row.client_profile_image_url ?? null,
             }
           : null,
       driver:
@@ -571,6 +576,7 @@ class RideModel {
         row.driver_last_name !== undefined ||
         row.driver_email !== undefined ||
         row.driver_phone_number !== undefined ||
+        row.driver_profile_image_url !== undefined ||
         row.driver_vehicle_plate !== undefined
           ? {
               firstName: row.driver_first_name ?? null,
@@ -581,6 +587,7 @@ class RideModel {
                 .trim() || null,
               email: row.driver_email ?? null,
               phoneNumber: row.driver_phone_number ?? null,
+              profileImageUrl: row.driver_profile_image_url ?? null,
               vehicleMake: row.driver_vehicle_make ?? null,
               vehicleModel: row.driver_vehicle_model ?? null,
               vehicleYear: row.driver_vehicle_year ?? null,
@@ -772,7 +779,8 @@ class RideModel {
           cu.first_name AS client_first_name,
           cu.last_name AS client_last_name,
           cu.email AS client_email,
-          cu.phone_number AS client_phone_number
+          cu.phone_number AS client_phone_number,
+          cu.profile_image_url AS client_profile_image_url
         FROM ride_driver_invites i
         JOIN drivers d ON d.user_id = i.driver_id
         JOIN (
@@ -937,6 +945,7 @@ class RideModel {
       limit = 25,
       offset = 0,
       includePassenger = false,
+      includeDriver = false,
     } = filters;
 
     const conditions = [];
@@ -971,11 +980,49 @@ class RideModel {
           c.first_name AS client_first_name,
           c.last_name AS client_last_name,
           c.email AS client_email,
-          c.phone_number AS client_phone_number`
+          c.phone_number AS client_phone_number,
+          c.profile_image_url AS client_profile_image_url`
       : "";
 
     const passengerJoin = includePassenger
       ? "LEFT JOIN users c ON c.id = r.client_id"
+      : "";
+
+    const driverSelect = includeDriver
+      ? `,
+          du.first_name AS driver_first_name,
+          du.last_name AS driver_last_name,
+          du.email AS driver_email,
+          du.phone_number AS driver_phone_number,
+          du.profile_image_url AS driver_profile_image_url,
+          d.vehicle_make AS driver_vehicle_make,
+          d.vehicle_model AS driver_vehicle_model,
+          d.vehicle_year AS driver_vehicle_year,
+          d.vehicle_color AS driver_vehicle_color,
+          d.vehicle_plate AS driver_vehicle_plate,
+          d.vehicle_type AS driver_vehicle_type,
+          COALESCE(
+            (
+              SELECT array_agg(dst.service_type_code ORDER BY st.sort_order ASC, st.name ASC)
+              FROM driver_service_types dst
+              JOIN service_types st ON st.code = dst.service_type_code
+              WHERE dst.driver_id = d.user_id
+                AND dst.is_active = true
+                AND st.is_active = true
+            ),
+            ARRAY[]::text[]
+          ) AS driver_service_types,
+          d.status AS driver_status,
+          ST_AsGeoJSON(d.current_location)::jsonb AS driver_current_location_geojson,
+          d.heading_degrees AS driver_heading_degrees,
+          d.speed_kmh AS driver_speed_kmh`
+      : "";
+
+    const driverJoin = includeDriver
+      ? `
+        LEFT JOIN drivers d ON d.user_id = r.driver_id
+        LEFT JOIN users du ON du.id = d.user_id
+      `
       : "";
 
     const { rows } = await executor.query(
@@ -983,6 +1030,7 @@ class RideModel {
         SELECT
           r.*
           ${passengerSelect}
+          ${driverSelect}
         FROM (
           SELECT ${BASE_RIDE_FIELDS}
           FROM rides
@@ -992,6 +1040,7 @@ class RideModel {
           OFFSET $${offsetIndex}
         ) r
         ${passengerJoin}
+        ${driverJoin}
         ORDER BY r.requested_at DESC, r.created_at DESC
       `,
       params

@@ -80,6 +80,7 @@ async function listUsers({ limit = 50, offset = 0, role = "", search = "" } = {}
         u.first_name,
         u.last_name,
         u.phone_number,
+        u.profile_image_url,
         u.role,
         u.status,
         ${includeOperatorProfile ? "u.profile," : ""}
@@ -109,6 +110,7 @@ async function listUsers({ limit = 50, offset = 0, role = "", search = "" } = {}
       firstName: row.first_name,
       lastName: row.last_name,
       phoneNumber: row.phone_number,
+      profileImageUrl: row.profile_image_url,
       role: row.role,
       status: row.status,
       operatorProfile: includeOperatorProfile
@@ -144,6 +146,7 @@ function mapDriverApproval(row) {
     firstName: row.first_name,
     lastName: row.last_name,
     phoneNumber: row.phone_number,
+    profileImageUrl: row.profile_image_url,
     status: row.status,
     createdAt: row.created_at,
     driverProfile: {
@@ -201,6 +204,7 @@ async function listDriverApprovals({ status = "pending", limit = 100, offset = 0
         u.first_name,
         u.last_name,
         u.phone_number,
+        u.profile_image_url,
         u.status,
         u.created_at,
         d.license_number,
