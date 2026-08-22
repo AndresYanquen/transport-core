@@ -27,6 +27,7 @@ const adminZonesRoutes = require("./modules/admin-zones/routes/admin-zones.route
 const adminDriversMapRoutes = require("./modules/admin-drivers-map/routes/admin-drivers-map.routes");
 const adminHotZonesRoutes = require("./modules/admin-hot-zones/routes/admin-hot-zones.routes");
 const radioRoutes = require("./modules/radio/routes/radio.routes");
+const driverNotificationRoutes = require("./modules/driver-notifications/routes/driver-notification.routes");
 const { authenticate } = require("./modules/auth/middleware/authentication.middleware");
 
 const app = express();
@@ -52,6 +53,7 @@ app.use("/api/preferred-drivers", authenticate, preferredDriverRoutes);
 app.use("/api/service-types", authenticate, serviceTypeRoutes);
 app.use("/api/settings", authenticate, settingsRoutes);
 app.use("/api/radio", authenticate, radioRoutes);
+app.use("/api/driver-notifications", authenticate, driverNotificationRoutes);
 app.use("/api/admin/navigation", authenticate, adminNavigationRoutes);
 app.use("/api/admin/operational-parameters", authenticate, adminOperationalParametersRoutes);
 app.use("/api/admin/users", authenticate, adminUsersRoutes);

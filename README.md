@@ -220,6 +220,24 @@ Socket.IO signaling events are `radio:offer`, `radio:answer`,
 `radio:talk-stop`, `radio:reply-start`, `radio:reply-stop`, `radio:mute`, and
 `radio:end`. SDP and ICE payloads are never persisted.
 
+### Driver Notifications Module
+
+Responsibility: driver-originated operational alerts for operators and admins,
+including the emergency panic button flow.
+
+| Method | Endpoint | Roles | Responsibility |
+| --- | --- | --- | --- |
+| `POST` | `/api/driver-notifications/panic` | `driver` | Creates or returns the driver's recent active panic alert. The driver id is taken from the JWT. |
+| `GET` | `/api/driver-notifications` | `operator`, `admin` | Lists notifications, defaulting to unread. Supports `status`, `type`, and `limit`. |
+| `PATCH` | `/api/driver-notifications/:notificationId/acknowledge` | `operator`, `admin` | Marks an active notification as acknowledged by the current user. |
+| `PATCH` | `/api/driver-notifications/:notificationId/resolve` | `operator`, `admin` | Resolves an active notification. |
+
+Panic alerts are emitted through Socket.IO as
+`operations:driver-panic-created` to both `operator` and `admin` role rooms.
+Acknowledgement and resolution emit
+`operations:driver-notification-acknowledged` and
+`operations:driver-notification-resolved`.
+
 The driver heat-map summary accepts `serviceType=all|<enabled-code>`. Each zone
 contains `availableRequestsByService` and a total in
 `metrics.availableRequests`. Zone request details accept `serviceType`, `page`
