@@ -21,6 +21,7 @@ import { useAuthStore } from "../../../stores/auth.js";
 
 const auth = useAuthStore();
 const roomRef = shallowRef(null);
+const remoteAudioElements = new Map();
 
 const statusOptions = [
   { value: "pending", label: "Pendientes" },
@@ -61,6 +62,7 @@ const radio = reactive({
   ending: false,
   error: "",
   micError: "",
+  audioError: "",
   livekit: null,
   connectionState: "disconnected",
   roomName: "",
@@ -169,6 +171,7 @@ function resetRadioState() {
   radio.session = null;
   radio.error = "";
   radio.micError = "";
+  radio.audioError = "";
   radio.livekit = null;
   radio.connectionState = "disconnected";
   radio.roomName = "";
@@ -192,12 +195,61 @@ function updateMicrophoneState(room = roomRef.value) {
   radio.micMuted = publication ? Boolean(publication.isMuted) : true;
 }
 
+async function startRoomAudio(room = roomRef.value) {
+  if (!room?.startAudio) return;
+  try {
+    await room.startAudio();
+    radio.audioError = "";
+  } catch (error) {
+    radio.audioError = error?.message || "El navegador bloqueo la reproduccion de audio.";
+  }
+}
+
+function attachRemoteAudio(track, publication, participant) {
+  if (track?.kind !== "audio") return;
+  const key = publication?.trackSid || `${participant?.identity || "remote"}-${Date.now()}`;
+  detachRemoteAudio(key);
+
+  const element = track.attach();
+  element.autoplay = true;
+  element.playsInline = true;
+  element.dataset.livekitRemoteAudio = key;
+  element.style.display = "none";
+  document.body.appendChild(element);
+  remoteAudioElements.set(key, { element, track });
+
+  element.play?.().catch((error) => {
+    radio.audioError = error?.message || "Haz clic en Conectar para habilitar el audio remoto.";
+  });
+}
+
+function detachRemoteAudio(keyOrTrack) {
+  if (!keyOrTrack) return;
+  const entries = typeof keyOrTrack === "string"
+    ? [[keyOrTrack, remoteAudioElements.get(keyOrTrack)]]
+    : [...remoteAudioElements.entries()].filter(([, entry]) => entry?.track === keyOrTrack);
+
+  for (const [key, entry] of entries) {
+    if (!entry) continue;
+    entry.track?.detach?.(entry.element);
+    entry.element?.remove?.();
+    remoteAudioElements.delete(key);
+  }
+}
+
+function clearRemoteAudio() {
+  for (const key of [...remoteAudioElements.keys()]) {
+    detachRemoteAudio(key);
+  }
+}
+
 function bindRoomEvents(room, RoomEvent) {
   room
     .on(RoomEvent.Connected, () => {
       radio.connectionState = "connected";
       radio.roomName = room.name || radio.livekit?.room || "";
       updateParticipantCount(room);
+      startRoomAudio(room);
     })
     .on(RoomEvent.Disconnected, () => {
       radio.connectionState = "disconnected";
@@ -216,7 +268,18 @@ function bindRoomEvents(room, RoomEvent) {
     .on(RoomEvent.TrackMuted, () => updateMicrophoneState(room))
     .on(RoomEvent.TrackUnmuted, () => updateMicrophoneState(room))
     .on(RoomEvent.ParticipantConnected, () => updateParticipantCount(room))
-    .on(RoomEvent.ParticipantDisconnected, () => updateParticipantCount(room));
+    .on(RoomEvent.ParticipantDisconnected, (participant) => {
+      for (const [key] of remoteAudioElements) {
+        if (key.startsWith(`${participant?.identity || ""}-`)) detachRemoteAudio(key);
+      }
+      updateParticipantCount(room);
+    })
+    .on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+      attachRemoteAudio(track, publication, participant);
+    })
+    .on(RoomEvent.TrackUnsubscribed, (track) => {
+      detachRemoteAudio(track);
+    });
 }
 
 async function fetchRequests({ quiet = false } = {}) {
@@ -274,6 +337,7 @@ async function connectLiveKit() {
     bindRoomEvents(room, RoomEvent);
     roomRef.value = room;
     await room.connect(radio.livekit.url, radio.livekit.token);
+    await startRoomAudio(room);
     updateParticipantCount(room);
     updateMicrophoneState(room);
   } catch (error) {
@@ -372,6 +436,7 @@ async function disconnectLiveKit({ silent = false } = {}) {
     radio.participantCount = 0;
     radio.micPublished = false;
     radio.micMuted = true;
+    clearRemoteAudio();
     stopTalkHeartbeat();
   }
 }
@@ -659,6 +724,12 @@ onBeforeUnmount(() => {
           </div>
           <div v-if="radio.micError" class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
             {{ radio.micError }}
+          </div>
+          <div v-if="radio.audioError" class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            <span>{{ radio.audioError }}</span>
+            <button class="rounded-md border border-amber-300 bg-white px-2 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100" type="button" @click="startRoomAudio()">
+              Habilitar audio
+            </button>
           </div>
           <div v-if="radio.talkDenied" class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
             {{ radio.talkDenied }}
