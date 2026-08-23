@@ -5,6 +5,44 @@ const { TokenVerifier } = require("livekit-server-sdk");
 const RadioService = require("../src/modules/radio/services/radio.service");
 const DriverModel = require("../src/modules/drivers/models/driver.model");
 const { env } = require("../src/config");
+const RedisConfig = require("../src/config/redis");
+
+function createRedisMock() {
+  const store = new Map();
+
+  return {
+    store,
+    async sendCommand(command) {
+      const [op, ...args] = command;
+      if (op === "SET") {
+        const [key, value] = args;
+        const nx = args.includes("NX");
+        if (nx && store.has(key)) return null;
+        store.set(key, value);
+        return "OK";
+      }
+      if (op === "GET") {
+        return store.get(args[0]) || null;
+      }
+      if (op === "DEL") {
+        const existed = store.delete(args[0]);
+        return existed ? 1 : 0;
+      }
+      if (op === "EVAL") {
+        const key = args[2];
+        const userId = args[3];
+        const current = store.get(key);
+        if (!current) return 0;
+        const decoded = JSON.parse(current);
+        if (decoded.userId !== userId) return -1;
+        if (/EXPIRE/.test(args[0])) return 1;
+        store.delete(key);
+        return 1;
+      }
+      throw new Error(`Unsupported Redis command ${op}`);
+    },
+  };
+}
 
 test("radio request creation requires a reachable driver", async () => {
   const original = DriverModel.getDriverById;
@@ -47,6 +85,108 @@ test("session access is limited to participants and admins", async () => {
     assert.equal(session.id, "session-1");
   } finally {
     RadioModel.getSession = original;
+  }
+});
+
+test("radio talk lock grants first speaker and denies concurrent speaker", async () => {
+  const RadioModel = require("../src/modules/radio/models/radio.model");
+  const redis = createRedisMock();
+  const originals = {
+    getRedisCommandClient: RedisConfig.getRedisCommandClient,
+    getSession: RadioModel.getSession,
+    updateSession: RadioModel.updateSession,
+    insertEvent: RadioModel.insertEvent,
+  };
+  const events = [];
+  RedisConfig.getRedisCommandClient = async () => redis;
+  RadioModel.getSession = async () => ({
+    id: "session-1",
+    operatorId: "operator-1",
+    driverId: "driver-1",
+    status: "idle",
+  });
+  RadioModel.updateSession = async (_id, fields) => ({
+    id: "session-1",
+    operatorId: "operator-1",
+    driverId: "driver-1",
+    status: fields.status,
+    speaker: fields.speaker,
+  });
+  RadioModel.insertEvent = async (event) => events.push(event);
+
+  try {
+    const granted = await RadioService.acquireTalkLock("session-1", {
+      id: "operator-1",
+      role: "operator",
+    });
+    const denied = await RadioService.acquireTalkLock("session-1", {
+      id: "driver-1",
+      role: "driver",
+    });
+
+    assert.equal(granted.granted, true);
+    assert.equal(granted.session.status, "operator_speaking");
+    assert.equal(granted.talk.userId, "operator-1");
+    assert.equal(denied.granted, false);
+    assert.equal(denied.reason, "busy");
+    assert.equal(denied.talk.userId, "operator-1");
+    assert.equal(events[0].eventType, "talk_started");
+  } finally {
+    Object.assign(RedisConfig, { getRedisCommandClient: originals.getRedisCommandClient });
+    RadioModel.getSession = originals.getSession;
+    RadioModel.updateSession = originals.updateSession;
+    RadioModel.insertEvent = originals.insertEvent;
+  }
+});
+
+test("radio talk lock release requires lock owner", async () => {
+  const RadioModel = require("../src/modules/radio/models/radio.model");
+  const redis = createRedisMock();
+  const originals = {
+    getRedisCommandClient: RedisConfig.getRedisCommandClient,
+    getSession: RadioModel.getSession,
+    updateSession: RadioModel.updateSession,
+    insertEvent: RadioModel.insertEvent,
+  };
+  RedisConfig.getRedisCommandClient = async () => redis;
+  RadioModel.getSession = async () => ({
+    id: "session-1",
+    operatorId: "operator-1",
+    driverId: "driver-1",
+    status: "operator_speaking",
+  });
+  RadioModel.updateSession = async (_id, fields) => ({
+    id: "session-1",
+    operatorId: "operator-1",
+    driverId: "driver-1",
+    status: fields.status,
+    speaker: fields.speaker,
+  });
+  RadioModel.insertEvent = async () => {};
+
+  try {
+    await RadioService.acquireTalkLock("session-1", {
+      id: "operator-1",
+      role: "operator",
+    });
+    const denied = await RadioService.releaseTalkLock("session-1", {
+      id: "driver-1",
+      role: "driver",
+    });
+    const released = await RadioService.releaseTalkLock("session-1", {
+      id: "operator-1",
+      role: "operator",
+    });
+
+    assert.equal(denied.released, false);
+    assert.equal(denied.reason, "not_owner");
+    assert.equal(released.released, true);
+    assert.equal(released.session.status, "idle");
+  } finally {
+    Object.assign(RedisConfig, { getRedisCommandClient: originals.getRedisCommandClient });
+    RadioModel.getSession = originals.getSession;
+    RadioModel.updateSession = originals.updateSession;
+    RadioModel.insertEvent = originals.insertEvent;
   }
 });
 

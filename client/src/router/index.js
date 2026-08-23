@@ -86,6 +86,28 @@ const routes = [
     }),
   },
   {
+    path: "/operator/operacion/radio",
+    name: "operator-radio-requests",
+    component: () => import("../modules/operator/views/OperatorRadioRequestsView.vue"),
+    meta: {
+      layout: "desktop",
+      operatorShell: true,
+      requiresAuth: true,
+      requiresOperator: true,
+    },
+  },
+  {
+    path: "/operator/operacion/radio/activity",
+    name: "operator-radio-activity",
+    component: () => import("../modules/admin/views/AdminOperatorActivityView.vue"),
+    meta: {
+      layout: "desktop",
+      operatorShell: true,
+      requiresAuth: true,
+      requiresOperator: true,
+    },
+  },
+  {
     path: "/operator/operacion/:operationView?",
     name: "operator-operation",
     component: () => import("../modules/operator/views/OperatorOperationView.vue"),
@@ -427,6 +449,18 @@ const routes = [
     name: "admin-operators-activity",
     alias: "/admin/operadoras/actividad",
     component: () => import("../modules/admin/views/AdminOperatorActivityView.vue"),
+    meta: {
+      layout: "desktop",
+      adminShell: true,
+      requiresAuth: true,
+      requiresAdmin: true,
+    },
+  },
+  {
+    path: "/admin/operadoras/radio-requests",
+    name: "admin-operators-radio-requests",
+    alias: "/admin/operadoras/solicitudes-radio",
+    component: () => import("../modules/operator/views/OperatorRadioRequestsView.vue"),
     meta: {
       layout: "desktop",
       adminShell: true,

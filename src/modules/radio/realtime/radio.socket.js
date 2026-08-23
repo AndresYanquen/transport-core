@@ -12,6 +12,7 @@ function validSignal(payload) {
 
 function registerRadioSocketHandlers(io, socket, { userRoom }) {
   const user = socket.data.user;
+  const heldTalkLocks = new Set();
 
   async function withSession(payload, handler) {
     try {
@@ -52,12 +53,88 @@ function registerRadioSocketHandlers(io, socket, { userRoom }) {
     }));
   }
 
+  async function emitTalkResult(payload, executor) {
+    try {
+      if (!payload?.sessionId) throw Object.assign(new Error("sessionId is required."), { status: 400 });
+      const result = await executor(payload.sessionId);
+      return result;
+    } catch (error) {
+      socket.emit("radio:error", {
+        sessionId: payload?.sessionId || null,
+        message: error.message,
+        status: error.status || 500,
+      });
+      return null;
+    }
+  }
+
+  async function handleTalkStart(payload = {}) {
+    const result = await emitTalkResult(payload, (sessionId) => RadioService.acquireTalkLock(sessionId, user));
+    if (!result) return;
+
+    if (result.granted) {
+      heldTalkLocks.add(result.session.id);
+      socket.emit("radio:talk:granted", {
+        sessionId: result.session.id,
+        talk: result.talk,
+        ttlSeconds: result.ttlSeconds,
+        emittedAt: new Date().toISOString(),
+      });
+      return;
+    }
+
+    socket.emit("radio:talk:denied", {
+      sessionId: result.session.id,
+      reason: result.reason,
+      talkingBy: result.talk?.userId || null,
+      talkingRole: result.talk?.role || null,
+      emittedAt: new Date().toISOString(),
+    });
+  }
+
+  async function handleTalkHeartbeat(payload = {}) {
+    const result = await emitTalkResult(payload, (sessionId) => RadioService.heartbeatTalkLock(sessionId, user));
+    if (!result) return;
+
+    socket.emit("radio:talk:heartbeat", {
+      sessionId: result.session.id,
+      renewed: result.renewed,
+      reason: result.reason || null,
+      ttlSeconds: result.ttlSeconds || null,
+      emittedAt: new Date().toISOString(),
+    });
+  }
+
+  async function handleTalkStop(payload = {}) {
+    const result = await emitTalkResult(payload, (sessionId) => RadioService.releaseTalkLock(sessionId, user));
+    if (!result) return;
+
+    heldTalkLocks.delete(result.session.id);
+    socket.emit("radio:talk:stopped", {
+      sessionId: result.session.id,
+      released: result.released,
+      reason: result.reason || null,
+      emittedAt: new Date().toISOString(),
+    });
+  }
+
+  socket.on("radio:talk:start", handleTalkStart);
+  socket.on("radio:talk:heartbeat", handleTalkHeartbeat);
+  socket.on("radio:talk:stop", handleTalkStop);
+  socket.on("radio:talk-start", handleTalkStart);
+  socket.on("radio:reply-start", handleTalkStart);
+  socket.on("radio:talk-stop", handleTalkStop);
+  socket.on("radio:reply-stop", handleTalkStop);
+
+  socket.on("disconnect", () => {
+    for (const sessionId of heldTalkLocks) {
+      RadioService.releaseTalkLock(sessionId, user).catch(() => {});
+    }
+    heldTalkLocks.clear();
+  });
+
   const actionEvents = {
     "radio:connected": "connected",
-    "radio:talk-start": "talk_start",
-    "radio:talk-stop": "talk_stop",
-    "radio:reply-start": "reply_start",
-    "radio:reply-stop": "reply_stop",
     "radio:mute": "mute",
     "radio:end": "end",
   };

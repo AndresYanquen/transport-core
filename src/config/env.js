@@ -176,6 +176,7 @@ const env = {
     connectTimeoutSeconds: parseNumber(process.env.RADIO_CONNECT_TIMEOUT_SECONDS, 15),
     idleTimeoutSeconds: parseNumber(process.env.RADIO_IDLE_TIMEOUT_SECONDS, 45),
     sweepIntervalSeconds: parseNumber(process.env.RADIO_SWEEP_INTERVAL_SECONDS, 5),
+    talkLockTtlSeconds: parseNumber(process.env.RADIO_TALK_LOCK_TTL_SECONDS, 15),
     iceServers: buildIceServers(),
   },
   livekit: {
