@@ -239,6 +239,7 @@ const routes = [
   {
     path: "/admin/conductores/aprobaciones",
     name: "admin-driver-approvals",
+    alias: "/admin/conductores/approvals",
     component: () => import("../modules/admin/views/AdminDriverApprovalsView.vue"),
     meta: {
       layout: "desktop",
