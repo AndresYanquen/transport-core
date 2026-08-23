@@ -17,6 +17,7 @@
     "echarts": "^6.1.0",
     "leaflet": "^1.9.4",
     "leaflet.markercluster": "^1.5.3",
+    "livekit-client": "^2.22.0",
     "lucide-vue-next": "^0.577.0",
     "reka-ui": "^2.9.2",
     "socket.io-client": "^4.8.3",

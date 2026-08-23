@@ -423,6 +423,18 @@ const routes = [
     },
   },
   {
+    path: "/admin/operadoras/activity",
+    name: "admin-operators-activity",
+    alias: "/admin/operadoras/actividad",
+    component: () => import("../modules/admin/views/AdminOperatorActivityView.vue"),
+    meta: {
+      layout: "desktop",
+      adminShell: true,
+      requiresAuth: true,
+      requiresAdmin: true,
+    },
+  },
+  {
     path: "/admin/zonas/mapa-de-cobertura",
     name: "admin-zones-coverage-map",
     component: () => import("../modules/admin/views/AdminZonesMapView.vue"),
