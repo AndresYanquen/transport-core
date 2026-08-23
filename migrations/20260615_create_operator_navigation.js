@@ -59,6 +59,7 @@ exports.up = async function up(knex) {
       ["services_in_progress", "Servicios En Curso"],
       ["completed_services", "Servicios Finalizados"],
       ["canceled_services", "Servicios Cancelados"],
+      ["radio", "Radio"],
     ]),
     group("operator.realtime_map", null, "Mapa en Tiempo Real", "mapa-en-tiempo-real", "/operator/mapa", "map", 30, [
       ["drivers", "Conductores"],
