@@ -1,13 +1,26 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive } from "vue";
-import { useRouter } from "vue-router";
-import { CheckCircle2, Clock3, Headphones, PhoneCall, RefreshCw, Search, XCircle } from "lucide-vue-next";
+import { computed, onBeforeUnmount, onMounted, reactive, shallowRef } from "vue";
+import {
+  CheckCircle2,
+  Clock3,
+  Headphones,
+  Mic,
+  MicOff,
+  PhoneCall,
+  Radio,
+  RefreshCw,
+  Search,
+  Users,
+  Wifi,
+  X,
+  XCircle,
+} from "lucide-vue-next";
 import { apiRequest } from "../../../services/api.js";
 import { createRealtimeSocket } from "../../../services/realtime.js";
 import { useAuthStore } from "../../../stores/auth.js";
 
 const auth = useAuthStore();
-const router = useRouter();
+const roomRef = shallowRef(null);
 
 const statusOptions = [
   { value: "pending", label: "Pendientes" },
@@ -31,7 +44,6 @@ const state = reactive({
   requests: [],
   lastUpdatedAt: null,
   socketConnected: false,
-  activeSession: null,
 });
 
 const filters = reactive({
@@ -39,10 +51,41 @@ const filters = reactive({
   search: "",
 });
 
+const radio = reactive({
+  open: false,
+  request: null,
+  session: null,
+  tokenLoading: false,
+  connecting: false,
+  disconnecting: false,
+  ending: false,
+  error: "",
+  micError: "",
+  livekit: null,
+  connectionState: "disconnected",
+  roomName: "",
+  participantCount: 0,
+  micLoading: false,
+  micPublished: false,
+  micMuted: true,
+  talkLoading: false,
+  talking: false,
+  talkDenied: "",
+  remoteTalking: null,
+});
+
 let socket = null;
 let clearSuccessTimer = null;
+let heartbeatTimer = null;
 
 const isOperator = computed(() => String(auth.state.user?.role || "").toLowerCase() === "operator");
+const isConnected = computed(() => radio.connectionState === "connected");
+const canTalk = computed(() => isConnected.value && radio.micPublished && !radio.micMuted && !radio.talkLoading);
+const micStatus = computed(() => {
+  if (radio.micLoading) return "Procesando";
+  if (!radio.micPublished) return "Sin publicar";
+  return radio.micMuted ? "Muteado" : "Activo";
+});
 
 const filteredRequests = computed(() => {
   const q = filters.search.trim().toLowerCase();
@@ -67,7 +110,7 @@ const summary = computed(() => {
     { label: statusLabel(filters.status), value: state.requests.length, icon: Headphones },
     { label: "Emergencia", value: emergency, icon: XCircle },
     { label: "Viaje activo", value: activeRide, icon: PhoneCall },
-    { label: "En vivo", value: state.socketConnected ? "Sí" : "No", icon: CheckCircle2 },
+    { label: "En vivo", value: state.socketConnected ? "Si" : "No", icon: CheckCircle2 },
   ];
 });
 
@@ -83,7 +126,7 @@ function priorityClass(priority) {
   return priorityMeta[priority]?.class || priorityMeta.normal.class;
 }
 
-function driverName(request) {
+function driverName(request = radio.request) {
   const driver = request?.driver || {};
   const name = [driver.firstName, driver.lastName].filter(Boolean).join(" ").trim();
   return name || driver.email || shortId(request?.driverId);
@@ -121,6 +164,61 @@ function showSuccess(message) {
   }, 3500);
 }
 
+function resetRadioState() {
+  radio.request = null;
+  radio.session = null;
+  radio.error = "";
+  radio.micError = "";
+  radio.livekit = null;
+  radio.connectionState = "disconnected";
+  radio.roomName = "";
+  radio.participantCount = 0;
+  radio.micLoading = false;
+  radio.micPublished = false;
+  radio.micMuted = true;
+  radio.talkLoading = false;
+  radio.talking = false;
+  radio.talkDenied = "";
+  radio.remoteTalking = null;
+}
+
+function updateParticipantCount(room = roomRef.value) {
+  radio.participantCount = room ? room.remoteParticipants.size + (room.localParticipant ? 1 : 0) : 0;
+}
+
+function updateMicrophoneState(room = roomRef.value) {
+  const publication = room?.localParticipant?.getTrackPublication?.("microphone");
+  radio.micPublished = Boolean(publication);
+  radio.micMuted = publication ? Boolean(publication.isMuted) : true;
+}
+
+function bindRoomEvents(room, RoomEvent) {
+  room
+    .on(RoomEvent.Connected, () => {
+      radio.connectionState = "connected";
+      radio.roomName = room.name || radio.livekit?.room || "";
+      updateParticipantCount(room);
+    })
+    .on(RoomEvent.Disconnected, () => {
+      radio.connectionState = "disconnected";
+      radio.participantCount = 0;
+      stopTalkHeartbeat();
+    })
+    .on(RoomEvent.Reconnecting, () => {
+      radio.connectionState = "reconnecting";
+    })
+    .on(RoomEvent.Reconnected, () => {
+      radio.connectionState = "connected";
+      updateParticipantCount(room);
+    })
+    .on(RoomEvent.LocalTrackPublished, () => updateMicrophoneState(room))
+    .on(RoomEvent.LocalTrackUnpublished, () => updateMicrophoneState(room))
+    .on(RoomEvent.TrackMuted, () => updateMicrophoneState(room))
+    .on(RoomEvent.TrackUnmuted, () => updateMicrophoneState(room))
+    .on(RoomEvent.ParticipantConnected, () => updateParticipantCount(room))
+    .on(RoomEvent.ParticipantDisconnected, () => updateParticipantCount(room));
+}
+
 async function fetchRequests({ quiet = false } = {}) {
   if (!quiet) state.loading = true;
   state.error = "";
@@ -140,6 +238,144 @@ async function fetchRequests({ quiet = false } = {}) {
   }
 }
 
+async function fetchSessionToken() {
+  if (!radio.session?.id) return;
+  radio.tokenLoading = true;
+  radio.error = "";
+
+  try {
+    const result = await apiRequest(`/api/radio/sessions/${radio.session.id}/livekit-token`, { method: "GET" });
+    radio.session = result?.session || radio.session;
+    radio.livekit = result?.livekit || null;
+    radio.roomName = radio.livekit?.room || "";
+  } catch (error) {
+    radio.error = error?.message || "No se pudo obtener el token de radio.";
+  } finally {
+    radio.tokenLoading = false;
+  }
+}
+
+async function connectLiveKit() {
+  radio.error = "";
+
+  if (!radio.livekit?.url || !radio.livekit?.token) {
+    await fetchSessionToken();
+  }
+
+  if (!radio.livekit?.url || !radio.livekit?.token) return;
+
+  await disconnectLiveKit({ silent: true });
+  radio.connecting = true;
+  radio.connectionState = "connecting";
+
+  try {
+    const { Room, RoomEvent } = await import("livekit-client");
+    const room = new Room({ adaptiveStream: true, dynacast: true });
+    bindRoomEvents(room, RoomEvent);
+    roomRef.value = room;
+    await room.connect(radio.livekit.url, radio.livekit.token);
+    updateParticipantCount(room);
+    updateMicrophoneState(room);
+  } catch (error) {
+    radio.connectionState = "disconnected";
+    roomRef.value = null;
+    radio.error = error?.message || "No se pudo conectar la sala de radio.";
+  } finally {
+    radio.connecting = false;
+  }
+}
+
+async function enableMicrophone() {
+  radio.error = "";
+  radio.micError = "";
+
+  if (!isConnected.value) {
+    await connectLiveKit();
+  }
+
+  const room = roomRef.value;
+  if (!room || !isConnected.value) return;
+
+  radio.micLoading = true;
+  try {
+    await room.localParticipant.setMicrophoneEnabled(true);
+    updateMicrophoneState(room);
+  } catch (error) {
+    radio.micError = error?.message || "No se pudo activar el micrófono.";
+  } finally {
+    radio.micLoading = false;
+  }
+}
+
+async function disableMicrophone() {
+  const room = roomRef.value;
+  if (!room || !radio.micPublished) return;
+
+  radio.micLoading = true;
+  radio.micError = "";
+  try {
+    await stopTalking();
+    await room.localParticipant.setMicrophoneEnabled(false);
+    updateMicrophoneState(room);
+  } catch (error) {
+    radio.micError = error?.message || "No se pudo apagar el micrófono.";
+  } finally {
+    radio.micLoading = false;
+  }
+}
+
+function startTalkHeartbeat() {
+  stopTalkHeartbeat();
+  heartbeatTimer = window.setInterval(() => {
+    if (socket && radio.session?.id && radio.talking) {
+      socket.emit("radio:talk:heartbeat", { sessionId: radio.session.id });
+    }
+  }, 4000);
+}
+
+function stopTalkHeartbeat() {
+  if (heartbeatTimer) {
+    window.clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+}
+
+async function startTalking() {
+  if (!socket || !radio.session?.id || !canTalk.value || radio.talking) return;
+  radio.talkLoading = true;
+  radio.talkDenied = "";
+  socket.emit("radio:talk:start", { sessionId: radio.session.id });
+}
+
+async function stopTalking() {
+  if (!socket || !radio.session?.id || !radio.talking) return;
+  socket.emit("radio:talk:stop", { sessionId: radio.session.id });
+  radio.talking = false;
+  stopTalkHeartbeat();
+}
+
+async function disconnectLiveKit({ silent = false } = {}) {
+  const room = roomRef.value;
+  if (!room) return;
+
+  radio.disconnecting = true;
+  try {
+    await stopTalking();
+    await room.disconnect();
+  } catch (error) {
+    if (!silent) radio.error = error?.message || "No se pudo desconectar de LiveKit.";
+  } finally {
+    room.removeAllListeners();
+    roomRef.value = null;
+    radio.disconnecting = false;
+    radio.connectionState = "disconnected";
+    radio.participantCount = 0;
+    radio.micPublished = false;
+    radio.micMuted = true;
+    stopTalkHeartbeat();
+  }
+}
+
 async function acceptRequest(request) {
   if (!request?.id || !isOperator.value) return;
   state.actionId = request.id;
@@ -147,7 +383,7 @@ async function acceptRequest(request) {
 
   try {
     const result = await apiRequest(`/api/radio/requests/${request.id}/accept`, { method: "POST" });
-    state.activeSession = result?.session || null;
+    openRadioModal({ request, session: result?.session || null });
     showSuccess(`Sesión de radio creada para ${driverName(request)}.`);
     await fetchRequests({ quiet: true });
   } catch (error) {
@@ -176,8 +412,70 @@ async function rejectRequest(request) {
   }
 }
 
-function openActivity() {
-  router.push(isOperator.value ? "/operator/operacion/radio/activity" : "/admin/operadoras/activity");
+async function openRadioModal({ request, session }) {
+  resetRadioState();
+  radio.open = true;
+  radio.request = request;
+  radio.session = session;
+  await fetchSessionToken();
+  await connectLiveKit();
+}
+
+async function closeRadioModal() {
+  await disconnectLiveKit({ silent: true });
+  radio.open = false;
+  resetRadioState();
+}
+
+async function endRadioSession() {
+  if (!socket || !radio.session?.id) {
+    await closeRadioModal();
+    return;
+  }
+
+  radio.ending = true;
+  socket.emit("radio:end", { sessionId: radio.session.id, reason: "operator_closed" });
+  window.setTimeout(async () => {
+    radio.ending = false;
+    await closeRadioModal();
+    await fetchRequests({ quiet: true });
+  }, 400);
+}
+
+function handleTalkGranted(payload = {}) {
+  if (payload.sessionId !== radio.session?.id) return;
+  radio.talking = true;
+  radio.talkLoading = false;
+  radio.talkDenied = "";
+  startTalkHeartbeat();
+}
+
+function handleTalkDenied(payload = {}) {
+  if (payload.sessionId !== radio.session?.id) return;
+  radio.talking = false;
+  radio.talkLoading = false;
+  radio.talkDenied = payload.reason === "busy"
+    ? "El conductor u otra parte tiene el canal ocupado."
+    : "No se pudo tomar el turno de voz.";
+  stopTalkHeartbeat();
+}
+
+function handleTalkStopped(payload = {}) {
+  if (payload.sessionId !== radio.session?.id) return;
+  radio.talking = false;
+  radio.talkLoading = false;
+  stopTalkHeartbeat();
+}
+
+function handleTalkChanged(payload = {}) {
+  if (payload.sessionId !== radio.session?.id) return;
+  const talk = payload.talk || null;
+  radio.remoteTalking = talk && talk.userId !== auth.state.user?.id ? talk : null;
+  if (!talk || talk.userId !== auth.state.user?.id) {
+    radio.talking = false;
+    radio.talkLoading = false;
+    stopTalkHeartbeat();
+  }
 }
 
 function connectRealtime() {
@@ -189,6 +487,11 @@ function connectRealtime() {
   socket.on("operations:radio-request-created", () => fetchRequests({ quiet: true }));
   socket.on("operations:radio-request-updated", () => fetchRequests({ quiet: true }));
   socket.on("operations:radio-session-updated", () => fetchRequests({ quiet: true }));
+  socket.on("radio:talk:granted", handleTalkGranted);
+  socket.on("radio:talk:denied", handleTalkDenied);
+  socket.on("radio:talk:stopped", handleTalkStopped);
+  socket.on("radio:talk:changed", handleTalkChanged);
+  socket.on("radio:ended", () => closeRadioModal());
 }
 
 onMounted(() => {
@@ -197,9 +500,11 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  disconnectLiveKit({ silent: true });
   socket?.disconnect();
   socket = null;
   if (clearSuccessTimer) window.clearTimeout(clearSuccessTimer);
+  stopTalkHeartbeat();
 });
 </script>
 
@@ -211,25 +516,15 @@ onBeforeUnmount(() => {
         <h1 class="mt-1 text-2xl font-semibold text-slate-950">Solicitudes de conductores</h1>
         <p class="mt-1 text-sm text-slate-500">Cola para contactar conductores que pidieron hablar con operación.</p>
       </div>
-      <div class="flex flex-wrap gap-2">
-        <button
-          class="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-          :disabled="state.loading"
-          type="button"
-          @click="fetchRequests()"
-        >
-          <RefreshCw :class="['h-4 w-4', state.loading ? 'animate-spin' : '']" />
-          Actualizar
-        </button>
-        <button
-          class="inline-flex h-9 items-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-medium text-white hover:bg-slate-800"
-          type="button"
-          @click="openActivity"
-        >
-          <Headphones class="h-4 w-4" />
-          Prueba LiveKit
-        </button>
-      </div>
+      <button
+        class="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+        :disabled="state.loading"
+        type="button"
+        @click="fetchRequests()"
+      >
+        <RefreshCw :class="['h-4 w-4', state.loading ? 'animate-spin' : '']" />
+        Actualizar
+      </button>
     </div>
 
     <div v-if="state.error" class="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
@@ -252,11 +547,6 @@ onBeforeUnmount(() => {
         </div>
       </article>
     </div>
-
-    <section v-if="state.activeSession" class="rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-      <div class="font-semibold">Sesión creada</div>
-      <div class="mt-1">ID sesión: <span class="font-mono">{{ state.activeSession.id }}</span></div>
-    </section>
 
     <section class="rounded-md border border-slate-200 bg-white shadow-sm">
       <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
@@ -349,5 +639,144 @@ onBeforeUnmount(() => {
         No hay solicitudes de radio para los filtros seleccionados.
       </div>
     </section>
+
+    <div v-if="radio.open" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4">
+      <section class="max-h-[92vh] w-full max-w-3xl overflow-hidden rounded-lg bg-white shadow-2xl">
+        <header class="flex items-start justify-between gap-4 border-b border-slate-200 p-4">
+          <div>
+            <p class="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">Radio con conductor</p>
+            <h2 class="mt-1 text-xl font-semibold text-slate-950">{{ driverName() }}</h2>
+            <p class="mt-1 text-sm text-slate-500">Sala {{ radio.roomName || radio.livekit?.room || shortId(radio.session?.id) }}</p>
+          </div>
+          <button class="grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50" type="button" @click="closeRadioModal">
+            <X class="h-4 w-4" />
+          </button>
+        </header>
+
+        <div class="grid max-h-[calc(92vh-73px)] gap-4 overflow-y-auto p-4">
+          <div v-if="radio.error" class="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+            {{ radio.error }}
+          </div>
+          <div v-if="radio.micError" class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            {{ radio.micError }}
+          </div>
+          <div v-if="radio.talkDenied" class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            {{ radio.talkDenied }}
+          </div>
+
+          <div class="grid gap-3 md:grid-cols-4">
+            <article class="rounded-md border border-slate-200 bg-slate-50 p-3">
+              <div class="text-xs uppercase tracking-wide text-slate-500">Conexion</div>
+              <div class="mt-1 flex items-center gap-2 text-base font-semibold capitalize text-slate-950">
+                <Wifi class="h-4 w-4" />
+                {{ radio.connectionState }}
+              </div>
+            </article>
+            <article class="rounded-md border border-slate-200 bg-slate-50 p-3">
+              <div class="text-xs uppercase tracking-wide text-slate-500">Participantes</div>
+              <div class="mt-1 flex items-center gap-2 text-base font-semibold text-slate-950">
+                <Users class="h-4 w-4" />
+                {{ radio.participantCount }}
+              </div>
+            </article>
+            <article class="rounded-md border border-slate-200 bg-slate-50 p-3">
+              <div class="text-xs uppercase tracking-wide text-slate-500">Microfono</div>
+              <div class="mt-1 flex items-center gap-2 text-base font-semibold text-slate-950">
+                <component :is="radio.micPublished && !radio.micMuted ? Mic : MicOff" class="h-4 w-4" />
+                {{ micStatus }}
+              </div>
+            </article>
+            <article class="rounded-md border border-slate-200 bg-slate-50 p-3">
+              <div class="text-xs uppercase tracking-wide text-slate-500">Canal</div>
+              <div class="mt-1 flex items-center gap-2 text-base font-semibold text-slate-950">
+                <Radio class="h-4 w-4" />
+                {{ radio.talking ? "Hablando" : radio.remoteTalking ? "Ocupado" : "Libre" }}
+              </div>
+            </article>
+          </div>
+
+          <section class="rounded-md border border-slate-200 p-4">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 class="text-base font-semibold text-slate-950">Controles de llamada</h3>
+                <p class="mt-1 text-sm text-slate-500">Conecta la sala, activa el microfono y toma el turno para hablar.</p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  class="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                  :disabled="radio.tokenLoading || radio.connecting || isConnected"
+                  type="button"
+                  @click="connectLiveKit"
+                >
+                  <Wifi :class="['h-4 w-4', radio.connecting ? 'animate-pulse' : '']" />
+                  Conectar
+                </button>
+                <button
+                  class="inline-flex h-9 items-center gap-2 rounded-md bg-emerald-600 px-3 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+                  :disabled="radio.micLoading || (radio.micPublished && !radio.micMuted)"
+                  type="button"
+                  @click="enableMicrophone"
+                >
+                  <Mic :class="['h-4 w-4', radio.micLoading ? 'animate-pulse' : '']" />
+                  Activar microfono
+                </button>
+                <button
+                  class="inline-flex h-9 items-center gap-2 rounded-md border border-rose-200 bg-white px-3 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                  :disabled="radio.micLoading || !radio.micPublished"
+                  type="button"
+                  @click="disableMicrophone"
+                >
+                  <MicOff class="h-4 w-4" />
+                  Apagar microfono
+                </button>
+              </div>
+            </div>
+
+            <div class="mt-5 grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
+              <div class="text-sm text-slate-600">
+                <span v-if="radio.remoteTalking">El canal esta ocupado por {{ radio.remoteTalking.role || "otro usuario" }}.</span>
+                <span v-else-if="radio.talking">Tu audio esta autorizado en el canal.</span>
+                <span v-else>Manten presionado para hablar con el conductor.</span>
+              </div>
+              <button
+                :class="[
+                  'inline-flex h-12 select-none items-center justify-center gap-2 rounded-md px-5 text-sm font-semibold text-white disabled:opacity-50',
+                  radio.talking ? 'bg-emerald-600' : 'bg-slate-950 hover:bg-slate-800'
+                ]"
+                :disabled="!canTalk"
+                type="button"
+                @mousedown="startTalking"
+                @mouseup="stopTalking"
+                @mouseleave="stopTalking"
+                @touchstart.prevent="startTalking"
+                @touchend.prevent="stopTalking"
+              >
+                <Mic class="h-4 w-4" />
+                {{ radio.talking ? "Hablando" : radio.talkLoading ? "Tomando turno" : "Mantener para hablar" }}
+              </button>
+            </div>
+          </section>
+
+          <footer class="flex flex-wrap justify-end gap-2">
+            <button
+              class="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              type="button"
+              @click="closeRadioModal"
+            >
+              Cerrar modal
+            </button>
+            <button
+              class="inline-flex h-9 items-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 text-sm font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+              :disabled="radio.ending"
+              type="button"
+              @click="endRadioSession"
+            >
+              <XCircle class="h-4 w-4" />
+              Finalizar radio
+            </button>
+          </footer>
+        </div>
+      </section>
+    </div>
   </section>
 </template>

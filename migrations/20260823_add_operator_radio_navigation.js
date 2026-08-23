@@ -16,14 +16,6 @@ exports.up = async function up(knex) {
   await knex("admin_menu_items")
     .insert([
       item("operator.operation.radio", "operator.operation", "Radio", "radio", "/operator/operacion/radio", 65),
-      item(
-        "operator.operation.radio.activity",
-        "operator.operation.radio",
-        "Prueba LiveKit",
-        "activity",
-        "/operator/operacion/radio/activity",
-        10
-      ),
     ])
     .onConflict("code")
     .merge([
@@ -40,6 +32,6 @@ exports.up = async function up(knex) {
 
 exports.down = async function down(knex) {
   await knex("admin_menu_items")
-    .whereIn("code", ["operator.operation.radio.activity", "operator.operation.radio"])
+    .whereIn("code", ["operator.operation.radio"])
     .delete();
 };

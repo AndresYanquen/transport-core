@@ -97,17 +97,6 @@ const routes = [
     },
   },
   {
-    path: "/operator/operacion/radio/activity",
-    name: "operator-radio-activity",
-    component: () => import("../modules/admin/views/AdminOperatorActivityView.vue"),
-    meta: {
-      layout: "desktop",
-      operatorShell: true,
-      requiresAuth: true,
-      requiresOperator: true,
-    },
-  },
-  {
     path: "/operator/operacion/:operationView?",
     name: "operator-operation",
     component: () => import("../modules/operator/views/OperatorOperationView.vue"),
