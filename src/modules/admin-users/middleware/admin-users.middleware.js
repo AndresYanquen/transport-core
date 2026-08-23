@@ -110,8 +110,10 @@ function validateListDriverApprovals(req, res, next) {
 
 function validateDriverApproval(req, res, next) {
   const driverId = String(req.params.driverId || "");
-  const approvalStatus = String(req.body?.approvalStatus || "");
-  const approvalNotes = req.body?.approvalNotes === undefined ? "" : String(req.body.approvalNotes);
+  const body = req.body || {};
+  const approvalStatus = String(body.approvalStatus || body.status || "");
+  const notesValue = body.approvalNotes ?? body.notes ?? body.reason ?? "";
+  const approvalNotes = String(notesValue);
 
   if (!UUID_PATTERN.test(driverId)) {
     return res.status(400).json({ message: "driverId must be a valid UUID." });

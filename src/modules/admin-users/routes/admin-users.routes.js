@@ -20,6 +20,13 @@ router.patch(
   AdminUsersController.updateDriverApproval
 );
 
+router.patch(
+  "/drivers/:driverId/approvalRequest",
+  authorizeRoles("admin"),
+  AdminUsersMiddleware.validateDriverApproval,
+  AdminUsersController.updateDriverApproval
+);
+
 router.get(
   "/",
   authorizeRoles("admin", "operator"),

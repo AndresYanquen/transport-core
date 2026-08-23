@@ -255,23 +255,31 @@ async function listDriverApprovals({ status = "pending", limit = 100, offset = 0
 async function updateDriverApproval(driverId, { approvalStatus, approvalNotes = "" }, adminId) {
   const { rows, rowCount } = await query(
     `
-      UPDATE drivers
+      WITH approval_input AS (
+        SELECT
+          $1::uuid AS driver_id,
+          $2::text AS approval_status,
+          $3::text AS approval_notes,
+          $4::uuid AS admin_id
+      )
+      UPDATE drivers d
       SET
-        approval_status = $2,
-        approval_notes = $3,
-        reviewed_by_admin_id = $4,
+        approval_status = approval_input.approval_status,
+        approval_notes = approval_input.approval_notes,
+        reviewed_by_admin_id = approval_input.admin_id,
         reviewed_at = NOW(),
         status = CASE
-          WHEN $2 = 'approved' THEN status
-          ELSE CASE WHEN status = 'busy' THEN 'busy' ELSE 'offline' END
+          WHEN approval_input.approval_status = 'approved' THEN d.status
+          ELSE CASE WHEN d.status = 'busy' THEN 'busy' ELSE 'offline' END
         END,
         availability_intent = CASE
-          WHEN $2 = 'approved' THEN availability_intent
+          WHEN approval_input.approval_status = 'approved' THEN d.availability_intent
           ELSE 'offline'
         END,
         updated_at = NOW()
-      WHERE user_id = $1
-      RETURNING user_id
+      FROM approval_input
+      WHERE d.user_id = approval_input.driver_id
+      RETURNING d.user_id
     `,
     [driverId, approvalStatus, approvalNotes || null, adminId],
   );
