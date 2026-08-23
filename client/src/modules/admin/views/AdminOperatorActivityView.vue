@@ -59,7 +59,7 @@ function updateParticipantCount(room = roomRef.value) {
   state.participantCount = room ? room.remoteParticipants.size + (room.localParticipant ? 1 : 0) : 0;
 }
 
-function bindRoomEvents(room) {
+function bindRoomEvents(room, RoomEvent) {
   room
     .on(RoomEvent.Connected, () => {
       state.connectionState = "connected";
@@ -118,7 +118,7 @@ async function connectLiveKit() {
       adaptiveStream: true,
       dynacast: true,
     });
-    bindRoomEvents(room);
+    bindRoomEvents(room, RoomEvent);
     roomRef.value = room;
     await room.connect(livekit.value.url, livekit.value.token);
     updateParticipantCount(room);
