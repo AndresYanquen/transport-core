@@ -11,5 +11,7 @@ router.post("/requests/:requestId/accept", authorizeRoles("operator"), Controlle
 router.post("/requests/:requestId/reject", authorizeRoles("operator"), Controller.rejectRequest);
 router.post("/sessions", authorizeRoles("operator"), Controller.createSession);
 router.get("/sessions/:sessionId", authorizeRoles("driver", "operator", "admin"), Controller.getSession);
+router.get("/sessions/:sessionId/livekit-token", authorizeRoles("driver", "operator", "admin"), Controller.liveKitToken);
+router.get("/livekit/token-test", authorizeRoles("client", "driver", "operator", "admin"), Controller.liveKitTokenTest);
 router.get("/ice-config", authorizeRoles("driver", "operator"), Controller.iceConfig);
 module.exports = router;

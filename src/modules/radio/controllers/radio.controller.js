@@ -26,11 +26,17 @@ async function createSession(req, res, next) {
 async function getSession(req, res, next) {
   try { res.json({ session: await RadioService.getSessionForParticipant(req.params.sessionId, req.user) }); } catch (error) { next(error); }
 }
+async function liveKitToken(req, res, next) {
+  try { res.json(await RadioService.createLiveKitTokenForSession(req.params.sessionId, req.user)); } catch (error) { next(error); }
+}
+async function liveKitTokenTest(req, res, next) {
+  try { res.json(await RadioService.createLiveKitTestToken(req.user)); } catch (error) { next(error); }
+}
 function iceConfig(_req, res) {
   res.json({ iceServers: env.radio.iceServers });
 }
 
 module.exports = {
   createRequest, myRequest, cancelRequest, listRequests, acceptRequest,
-  rejectRequest, createSession, getSession, iceConfig,
+  rejectRequest, createSession, getSession, liveKitToken, liveKitTokenTest, iceConfig,
 };

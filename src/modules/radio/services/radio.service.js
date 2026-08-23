@@ -1,6 +1,7 @@
 const RadioModel = require("../models/radio.model");
 const DriverModel = require("../../drivers/models/driver.model");
 const { env } = require("../../../config");
+const { AccessToken } = require("livekit-server-sdk");
 const { emitToRole, emitToUser } = require("../../../realtime/socket.server");
 const { TERMINAL_SESSION_STATUSES } = require("../constants/radio.constants");
 
@@ -23,6 +24,54 @@ function emitSession(session, event = "radio:session-updated") {
   emitToUser(session.operatorId, event, payload);
   emitToUser(session.driverId, event, payload);
   emitToRole("operator", "operations:radio-session-updated", payload);
+}
+
+function ensureLiveKitConfigured() {
+  if (!env.livekit.url || !env.livekit.apiKey || !env.livekit.apiSecret) {
+    throw httpError(503, "LiveKit is not configured.");
+  }
+}
+
+function buildLiveKitIdentity(user) {
+  const role = String(user?.role || "user").toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+  return `${role}-${user.id}`;
+}
+
+function buildRadioRoomName(sessionId) {
+  return `radio-${sessionId}`;
+}
+
+async function buildLiveKitToken({ user, roomName, canPublish = true }) {
+  ensureLiveKitConfigured();
+  if (!user?.id) {
+    throw httpError(401, "Authentication is required.");
+  }
+
+  const identity = buildLiveKitIdentity(user);
+  const token = new AccessToken(env.livekit.apiKey, env.livekit.apiSecret, {
+    identity,
+    ttl: env.livekit.tokenTtl,
+    name: [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || identity,
+    metadata: JSON.stringify({
+      userId: user.id,
+      role: user.role,
+    }),
+  });
+
+  token.addGrant({
+    roomJoin: true,
+    room: roomName,
+    canPublish,
+    canSubscribe: true,
+    canPublishData: true,
+  });
+
+  return {
+    url: env.livekit.url,
+    room: roomName,
+    identity,
+    token: await token.toJwt(),
+  };
 }
 
 async function validateDriverReachable(driverId) {
@@ -191,6 +240,37 @@ async function getSessionForParticipant(sessionId, user) {
   return session;
 }
 
+async function createLiveKitTokenForSession(sessionId, user) {
+  const session = await getSessionForParticipant(sessionId, user);
+  if (TERMINAL_SESSION_STATUSES.has(session.status)) {
+    throw httpError(409, "Session ended.");
+  }
+
+  return {
+    session,
+    livekit: await buildLiveKitToken({
+      user,
+      roomName: buildRadioRoomName(session.id),
+      canPublish: ["driver", "operator"].includes(String(user.role || "").toLowerCase()),
+    }),
+  };
+}
+
+async function createLiveKitTestToken(user) {
+  const role = String(user?.role || "").toLowerCase();
+  if (!["client", "driver", "operator", "admin"].includes(role)) {
+    throw httpError(403, "Forbidden.");
+  }
+
+  return {
+    livekit: await buildLiveKitToken({
+      user,
+      roomName: env.livekit.testRoom,
+      canPublish: true,
+    }),
+  };
+}
+
 async function transitionSession(sessionId, user, action, payload = {}) {
   const session = await getSessionForParticipant(sessionId, user);
   if (TERMINAL_SESSION_STATUSES.has(session.status)) throw httpError(409, "Session ended.");
@@ -253,7 +333,13 @@ module.exports = {
   rejectRequest,
   createDirectSession,
   getSessionForParticipant,
+  createLiveKitTokenForSession,
+  createLiveKitTestToken,
   transitionSession,
   sweep,
-  __private: { validateDriverReachable },
+  __private: {
+    validateDriverReachable,
+    buildLiveKitIdentity,
+    buildRadioRoomName,
+  },
 };

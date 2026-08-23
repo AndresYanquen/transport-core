@@ -178,6 +178,13 @@ const env = {
     sweepIntervalSeconds: parseNumber(process.env.RADIO_SWEEP_INTERVAL_SECONDS, 5),
     iceServers: buildIceServers(),
   },
+  livekit: {
+    url: process.env.LIVEKIT_URL || "",
+    apiKey: process.env.LIVEKIT_API_KEY || "",
+    apiSecret: process.env.LIVEKIT_API_SECRET || "",
+    tokenTtl: process.env.LIVEKIT_TOKEN_TTL || "10m",
+    testRoom: process.env.LIVEKIT_TEST_ROOM || "radio-test",
+  },
   google: {
     mapsApiKey: process.env.GOOGLE_MAPS_API_KEY || "",
     clientId: process.env.GOOGLE_CLIENT_ID || "",
