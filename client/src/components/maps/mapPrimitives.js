@@ -1,5 +1,29 @@
 import L from "leaflet";
 
+const stadiaTileUrl = import.meta.env.VITE_STADIA_TILE_URL || (
+  import.meta.env.VITE_STADIA_API_KEY
+    ? `https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png?api_key=${import.meta.env.VITE_STADIA_API_KEY}`
+    : "https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png"
+);
+
+export const mapTileOptions = {
+  attribution:
+    '&copy; <a href="https://www.stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  maxZoom: 19,
+};
+
+export function addBaseTileLayer(map, options = {}) {
+  return L.tileLayer(stadiaTileUrl, { ...mapTileOptions, ...options }).addTo(map);
+}
+
+export function mapTileUrl(x, y, z) {
+  return stadiaTileUrl
+    .replace("{x}", x)
+    .replace("{y}", y)
+    .replace("{z}", z)
+    .replace("{r}", "");
+}
+
 export function escapeMapHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")

@@ -7,6 +7,7 @@ import { useRoute } from "vue-router";
 import { io } from "socket.io-client";
 
 import { apiRequest, buildApiUrl } from "../../../services/api.js";
+import { addBaseTileLayer } from "../../../components/maps/mapPrimitives.js";
 
 const route = useRoute();
 const trackingToken = computed(() => String(route.params.token || ""));
@@ -178,9 +179,7 @@ function updateMap() {
       [points[0].lat, points[0].lng],
       14
     );
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-    }).addTo(map);
+    addBaseTileLayer(map);
   }
 
   pickupMarker?.remove();

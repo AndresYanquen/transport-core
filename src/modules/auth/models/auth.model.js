@@ -263,6 +263,7 @@ class AuthModel {
     firstName,
     lastName,
     createdByOperatorId,
+    source = "operator_phone_call",
   }) {
     const normalizedPhone = normalizePhoneNumber(phoneNumber);
     if (!normalizedPhone) {
@@ -276,7 +277,7 @@ class AuthModel {
 
       const profile = {
         phoneOnly: true,
-        source: "operator_phone_call",
+        source,
         createdByOperatorId: createdByOperatorId || null,
       };
 

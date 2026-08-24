@@ -5,6 +5,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useRoute, useRouter } from "vue-router";
 import { AlertTriangle, Car, CheckCircle2, Clock3, Copy, LocateFixed, MapPin, Plus, RefreshCw, Search, XCircle } from "lucide-vue-next";
 import { apiRequest } from "../../../services/api.js";
+import { addBaseTileLayer } from "../../../components/maps/mapPrimitives.js";
 import { createRealtimeSocket } from "../../../services/realtime.js";
 import { useAuthStore } from "../../../stores/auth.js";
 import { useOperationalSettings } from "../../../stores/operationalSettings.js";
@@ -497,10 +498,7 @@ function initRequestMap() {
   if (!mapEl.value || requestMap) return;
   const center = operationalSettings.mapCenter.value;
   requestMap = L.map(mapEl.value, { zoomControl: true }).setView([center.lat, center.lng], 14);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: "&copy; OpenStreetMap",
-    maxZoom: 19,
-  }).addTo(requestMap);
+  addBaseTileLayer(requestMap);
 }
 
 function destroyRequestMap() {

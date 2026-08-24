@@ -153,7 +153,7 @@ onMounted(() => {
         </button>
       </div>
 
-      <nav :class="['min-h-0 flex-1 overflow-visible px-3 py-3', sidebarCollapsed ? 'lg:px-2' : '']">
+      <nav :class="['min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-3 lg:overflow-visible', sidebarCollapsed ? 'lg:px-2' : '']">
         <div v-if="navigation.state.loading" class="px-2 py-3 text-sm text-slate-500">Cargando menú...</div>
         <div v-else-if="navigation.state.error" class="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
           {{ navigation.state.error }}
@@ -208,7 +208,7 @@ onMounted(() => {
             <div
               v-if="item.children?.length"
               :class="[
-                'absolute left-full top-0 z-[1400] w-72 rounded-md border border-slate-200 bg-white p-2 shadow-xl transition',
+                'absolute left-0 top-full z-[1400] max-h-[70vh] w-full overflow-y-auto rounded-md border border-slate-200 bg-white p-2 shadow-xl transition lg:left-full lg:top-0 lg:w-72',
                 openMenuCode === item.code ? 'visible opacity-100' : 'invisible opacity-0',
               ]"
             >
@@ -285,8 +285,8 @@ onMounted(() => {
       </div>
     </aside>
 
-    <div :class="['transition-[padding] duration-200', sidebarCollapsed ? 'lg:pl-16' : 'lg:pl-72']">
-      <header class="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-slate-200 bg-white/95 px-4 backdrop-blur">
+    <div :class="['min-w-0 transition-[padding] duration-200', sidebarCollapsed ? 'lg:pl-16' : 'lg:pl-72']">
+      <header class="sticky top-0 z-20 flex h-14 min-w-0 items-center justify-between gap-2 border-b border-slate-200 bg-white/95 px-3 backdrop-blur sm:px-4">
         <div class="flex min-w-0 items-center gap-3">
           <button
             class="grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-700 lg:hidden"
@@ -309,7 +309,7 @@ onMounted(() => {
             <div class="truncate text-xs text-slate-500">{{ route.path }}</div>
           </div>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex min-w-0 shrink-0 items-center gap-2">
           <MenuFavorites role="admin" />
           <RouterLink
             class="relative grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50"
@@ -328,7 +328,7 @@ onMounted(() => {
         </div>
       </header>
 
-      <main class="min-h-[calc(100vh-56px)]">
+      <main class="min-h-[calc(100vh-56px)] min-w-0 overflow-x-hidden">
         <RouterView />
       </main>
     </div>

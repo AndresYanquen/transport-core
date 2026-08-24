@@ -5,6 +5,7 @@ import L from "leaflet";
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { Car, Crosshair, MapPinned, Radio, RefreshCw, Search, Wifi, WifiOff } from "lucide-vue-next";
 import { apiRequest } from "../../../services/api.js";
+import { addBaseTileLayer } from "../../../components/maps/mapPrimitives.js";
 import { createRealtimeSocket } from "../../../services/realtime.js";
 import { useAuthStore } from "../../../stores/auth.js";
 import { driverPresenceClass, driverPresenceKey, driverPresenceLabel, isDriverStale, offlineReasonLabel } from "../../../lib/driverPresence.js";
@@ -106,10 +107,7 @@ function initMap() {
     zoomControl: true,
   }).setView([center.lat, center.lng], operationalSettings.mapDefaultZoom.value);
 
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: "&copy; OpenStreetMap",
-    maxZoom: 19,
-  }).addTo(map);
+  addBaseTileLayer(map);
 
   driverLayer = L.layerGroup().addTo(map);
 }

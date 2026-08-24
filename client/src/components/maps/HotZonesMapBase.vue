@@ -20,6 +20,7 @@ import { useOperationalSettings } from "../../stores/operationalSettings.js";
 import {
   createDriverMarkerIcon,
   createRequestMarkerIcon,
+  addBaseTileLayer,
   escapeMapHtml,
   shortMapId,
 } from "./mapPrimitives.js";
@@ -102,9 +103,7 @@ function initMap() {
   if (!mapEl.value || map) return;
   const center = operationalSettings.mapCenter.value;
   map = L.map(mapEl.value, { zoomControl: true }).setView([center.lat, center.lng], operationalSettings.mapDefaultZoom.value);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: "&copy; OpenStreetMap", maxZoom: 19,
-  }).addTo(map);
+  addBaseTileLayer(map);
   map.createPane("hotCoveragePane");
   map.getPane("hotCoveragePane").style.zIndex = "320";
   map.getPane("hotCoveragePane").style.pointerEvents = "none";

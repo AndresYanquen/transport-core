@@ -5,6 +5,7 @@ import L from "leaflet";
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { Edit3, Info, MapPinned, MousePointer2, RefreshCw, Save, Trash2, Undo2, X } from "lucide-vue-next";
 import { apiRequest } from "../../../services/api.js";
+import { addBaseTileLayer } from "../../../components/maps/mapPrimitives.js";
 import { useOperationalSettings } from "../../../stores/operationalSettings.js";
 
 const mapEl = ref(null);
@@ -67,10 +68,7 @@ function initMap() {
     zoomControl: true,
   }).setView([center.lat, center.lng], operationalSettings.mapDefaultZoom.value);
 
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: "&copy; OpenStreetMap",
-    maxZoom: 19,
-  }).addTo(map);
+  addBaseTileLayer(map);
 
   zoneLayer = L.layerGroup().addTo(map);
   previewLayer = L.layerGroup().addTo(map);

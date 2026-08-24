@@ -85,7 +85,7 @@ onMounted(() => {
 
     <div
       v-if="dropdownOpen"
-      class="absolute right-0 top-11 z-[1500] w-72 rounded-md border border-slate-200 bg-white p-2 shadow-xl"
+      class="absolute right-0 top-11 z-[1500] max-h-[70vh] w-[min(18rem,calc(100vw-1.5rem))] overflow-y-auto rounded-md border border-slate-200 bg-white p-2 shadow-xl"
     >
       <div class="flex items-start justify-between gap-3 px-2 py-1">
         <div>
@@ -131,7 +131,7 @@ onMounted(() => {
       </button>
     </div>
 
-    <div v-if="modalOpen" class="fixed inset-0 z-[1700] grid place-items-center bg-slate-950/40 p-4">
+    <div v-if="modalOpen" class="fixed inset-0 z-[1700] grid place-items-center overflow-y-auto bg-slate-950/40 p-3 sm:p-4">
       <div class="w-full max-w-lg rounded-md bg-white shadow-2xl">
         <div class="flex items-start justify-between gap-3 border-b border-slate-200 p-4">
           <div>

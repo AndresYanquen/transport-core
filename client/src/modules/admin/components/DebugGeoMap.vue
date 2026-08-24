@@ -1,6 +1,7 @@
 <script setup>
 import { Maximize2, Minus, Minimize2, Plus, RotateCcw, X } from "lucide-vue-next";
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { mapTileUrl } from "../../../components/maps/mapPrimitives.js";
 
 const props = defineProps({
   drivers: { type: Array, default: () => [] },
@@ -213,7 +214,7 @@ function lonLatToWorld({ lat, lng }, zoom) {
 }
 
 function tileUrl(x, y, z) {
-  return `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+  return mapTileUrl(x, y, z);
 }
 
 const bounds = computed(() => {

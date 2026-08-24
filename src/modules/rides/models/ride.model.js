@@ -9,6 +9,7 @@ const BASE_RIDE_FIELDS = `
   client_id,
   driver_id,
   status,
+  source,
   service_type,
   pickup_address,
   dropoff_address,
@@ -94,6 +95,7 @@ class RideModel {
     clientId,
     driverId = null,
     status,
+    source = "app",
     serviceType,
     pickupAddress,
     dropoffAddress,
@@ -147,6 +149,7 @@ class RideModel {
           client_id,
           driver_id,
           status,
+          source,
           service_type,
           pickup_address,
           dropoff_address,
@@ -177,13 +180,13 @@ class RideModel {
           $7,
           $8,
           $9,
-          CASE WHEN $10::text IS NULL THEN NULL
-              ELSE ST_GeogFromText($10::text)
-          END,
+          $10,
           CASE WHEN $11::text IS NULL THEN NULL
               ELSE ST_GeogFromText($11::text)
           END,
-          $12,
+          CASE WHEN $12::text IS NULL THEN NULL
+              ELSE ST_GeogFromText($12::text)
+          END,
           $13,
           $14,
           $15,
@@ -192,9 +195,11 @@ class RideModel {
           $18,
           $19,
           $20,
-          COALESCE($21::jsonb, '{}'::jsonb),
+          $21,
           $22,
-          $23
+          COALESCE($23::jsonb, '{}'::jsonb),
+          $24,
+          $25
         )
         RETURNING ${BASE_RIDE_FIELDS}
       `,
@@ -203,6 +208,7 @@ class RideModel {
         clientId,
         driverId,
         status,
+        source,
         serviceType,
         pickupAddress ?? null,
         dropoffAddress ?? null,
@@ -624,6 +630,7 @@ class RideModel {
       })(),
       driverId: row.driver_id,
       status: row.status,
+      source: row.source ?? "app",
       serviceType: row.service_type,
       pickupAddress: row.pickup_address,
       dropoffAddress: row.dropoff_address,

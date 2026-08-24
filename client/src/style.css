@@ -507,3 +507,118 @@ a {
     box-shadow: none;
   }
 }
+
+/* Shared responsive hardening for the admin/operator desktop shells. */
+html,
+body,
+#app {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+img,
+svg,
+canvas,
+video {
+  max-width: 100%;
+}
+
+main,
+section,
+article,
+header,
+footer,
+form,
+fieldset,
+.min-w-0 {
+  min-width: 0;
+}
+
+table {
+  max-width: 100%;
+}
+
+[class*="overflow-x-auto"] {
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+[class*="overflow-x-auto"] table {
+  white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+  main > section {
+    padding: 12px !important;
+  }
+
+  header {
+    min-width: 0;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    max-width: 100%;
+  }
+
+  [class~="w-72"],
+  [class~="w-80"],
+  [class~="w-96"],
+  [class*="w-[360px]"],
+  [class*="w-[380px]"],
+  [class*="w-[420px]"] {
+    width: 100% !important;
+  }
+
+  [class*="max-w-[320px]"],
+  [class*="max-w-[360px]"],
+  [class*="max-w-[380px]"],
+  [class*="max-w-[420px]"] {
+    max-width: 100% !important;
+  }
+
+  [class*="min-w-[760px]"],
+  [class*="min-w-[820px]"],
+  [class*="min-w-[860px]"],
+  [class*="min-w-[900px]"],
+  [class*="min-w-[920px]"],
+  [class*="min-w-[960px]"],
+  [class*="min-w-[980px]"],
+  [class*="min-w-[1040px]"],
+  [class*="min-w-[1080px]"],
+  [class*="min-w-[1100px]"],
+  [class*="min-w-[1120px]"] {
+    min-width: 720px !important;
+  }
+
+  .fixed[class*="place-items-center"] {
+    align-items: end;
+    padding: 10px !important;
+  }
+
+  .fixed[class*="place-items-center"] > section,
+  .fixed[class*="place-items-center"] > div {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: calc(100vh - 20px) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  [class*="grid-cols-[1fr_auto]"],
+  [class*="grid-cols-[minmax"],
+  [class*="grid-cols-[300px"],
+  [class*="grid-cols-[320px"],
+  [class*="grid-cols-[360px"],
+  [class*="grid-cols-[380px"],
+  [class*="grid-cols-[420px"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  [class*="min-h-[640px]"],
+  [class*="min-h-[680px]"] {
+    min-height: auto !important;
+  }
+}

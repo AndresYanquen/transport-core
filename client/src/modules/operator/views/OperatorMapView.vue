@@ -7,6 +7,7 @@ import { Car, Check, Clock3, Copy, Layers3, LocateFixed, RefreshCw, Search, User
 import {
   createDriverMarkerIcon,
   createRequestMarkerIcon,
+  addBaseTileLayer,
   escapeMapHtml,
   shortMapId,
 } from "../../../components/maps/mapPrimitives.js";
@@ -90,10 +91,7 @@ function initMap() {
   if (map || !mapEl.value) return;
   const center = operationalSettings.mapCenter.value;
   map = L.map(mapEl.value).setView([center.lat, center.lng], operationalSettings.mapDefaultZoom.value);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: "&copy; OpenStreetMap",
-    maxZoom: 19,
-  }).addTo(map);
+  addBaseTileLayer(map);
   map.createPane("operatorZonePane");
   map.getPane("operatorZonePane").style.zIndex = "350";
   map.createPane("operatorRequestPane");

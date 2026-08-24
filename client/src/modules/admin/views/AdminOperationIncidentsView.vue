@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { AlertTriangle, Ban, CheckCircle2, Clock3, Copy, FileText, RefreshCw, Search, ShieldAlert } from "lucide-vue-next";
+import { AlertTriangle, Ban, CheckCircle2, Clock3, Copy, FileText, History, RefreshCw, Search, ShieldAlert } from "lucide-vue-next";
 import { apiRequest } from "../../../services/api.js";
 import { createRealtimeSocket } from "../../../services/realtime.js";
 import { useAuthStore } from "../../../stores/auth.js";
@@ -13,6 +13,7 @@ const auth = useAuthStore();
 const driverNotifications = useDriverNotificationsStore();
 
 const tabs = [
+  { key: "history", slug: "", label: "Historial", icon: History },
   { key: "panic", slug: "panico", label: "Pánico", icon: AlertTriangle },
   { key: "reports", slug: "reportes", label: "Reportes", icon: FileText },
   { key: "complaints", slug: "quejas", label: "Quejas", icon: Ban },
@@ -20,6 +21,7 @@ const tabs = [
 ];
 
 const tabAliases = {
+  historial: "history",
   panico: "panic",
   reportes: "reports",
   quejas: "complaints",
@@ -59,14 +61,15 @@ let socket = null;
 let refreshTimer = null;
 
 function normalizeTab(value) {
-  return tabs.some((tab) => tab.key === value) ? value : "panic";
+  return tabs.some((tab) => tab.key === value) ? value : "history";
 }
 
 function resolveRouteTab() {
   const viewParam = Array.isArray(route.params.incidentView)
     ? route.params.incidentView[0]
     : route.params.incidentView;
-  return tabAliases[String(viewParam || "").toLowerCase()] || normalizeTab(String(route.query.vista || "reports"));
+  const routeTab = tabAliases[String(viewParam || "").toLowerCase()] || String(route.query.vista || "");
+  return normalizeTab(routeTab || "history");
 }
 
 async function fetchIncidents({ quiet = false } = {}) {
@@ -89,10 +92,16 @@ async function fetchPanicAlerts({ quiet = false } = {}) {
   state.notificationError = "";
 
   try {
-    const data = await apiRequest("/api/driver-notifications?status=unread&type=panic&limit=200", { method: "GET" });
-    const unread = data?.notifications || [];
-    const acknowledgedData = await apiRequest("/api/driver-notifications?status=acknowledged&type=panic&limit=200", { method: "GET" });
-    state.panicAlerts = [...unread, ...(acknowledgedData?.notifications || [])].sort(
+    const responses = await Promise.all(
+      ["unread", "acknowledged", "resolved"].map((status) =>
+        apiRequest(`/api/driver-notifications?status=${status}&type=panic&limit=200`, { method: "GET" }),
+      ),
+    );
+    const deduped = new Map();
+    responses.flatMap((data) => data?.notifications || []).forEach((notification) => {
+      if (notification?.id) deduped.set(notification.id, notification);
+    });
+    state.panicAlerts = [...deduped.values()].sort(
       (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime(),
     );
     state.lastUpdatedAt = new Date().toISOString();
@@ -124,7 +133,7 @@ function setTab(tabKey) {
   const prefix = String(auth.state.user?.role || "").toLowerCase() === "operator"
     ? "/operator/operacion/incidentes"
     : "/admin/operacion/incidentes";
-  router.replace(`${prefix}/${tab.slug}`);
+  router.replace(tab.slug ? `${prefix}/${tab.slug}` : prefix);
 }
 
 function shortId(id) {
@@ -259,6 +268,16 @@ function isLongWait(ride) {
   return Number.isFinite(requested) && Date.now() - requested > 10 * 60 * 1000;
 }
 
+function incidentTimestamp(ride) {
+  return ride.updatedAt || ride.canceledAt || ride.completedAt || ride.requestedAt || ride.createdAt;
+}
+
+function rideIncidentDetail(ride) {
+  if (ride.cancellationReason) return ride.cancellationReason;
+  if (isLongWait(ride)) return "Solicitud pendiente por más de 10 minutos.";
+  return ride.dropoffAddress || "Sin detalle adicional";
+}
+
 function matchesSearch(ride) {
   const query = filters.search.trim().toLowerCase();
   if (!query) return true;
@@ -294,6 +313,82 @@ const specialCases = computed(() =>
   state.rides.filter((ride) => ride.status === "canceled_by_system" || ride.status === "no_show"),
 );
 
+const rideIncidentRows = computed(() => {
+  const rows = state.rides.filter((ride) =>
+    ["canceled_by_driver", "canceled_by_client", "canceled_by_system", "no_show"].includes(ride.status) || isLongWait(ride),
+  );
+
+  return rows.map((ride) => ({
+    id: ride.id,
+    kind: "ride",
+    type: incidentType(ride),
+    status: statusLabel(ride.status),
+    statusClass: statusClass(ride.status),
+    primary: personName(ride.driver) !== "-" ? personName(ride.driver) : personName(ride.passenger),
+    secondary: personName(ride.passenger),
+    location: ride.pickupAddress || "-",
+    detail: rideIncidentDetail(ride),
+    createdAt: incidentTimestamp(ride),
+    ride,
+  }));
+});
+
+const panicHistoryRows = computed(() =>
+  state.panicAlerts.map((notification) => ({
+    id: notification.id,
+    kind: "panic",
+    type: "Pánico",
+    status: notificationStatusLabel(notification.status),
+    statusClass: notificationStatusClass(notification.status),
+    primary: notificationDriverName(notification),
+    secondary: notification.driver?.email || notification.driver?.phoneNumber || "-",
+    location: notificationLocation(notification),
+    detail: notification.message || "Alerta de pánico enviada por conductor.",
+    createdAt: notification.createdAt,
+    notification,
+  })),
+);
+
+function matchesHistorySearch(row) {
+  const query = filters.search.trim().toLowerCase();
+  if (!query) return true;
+
+  const source = row.kind === "panic"
+    ? [
+      row.id,
+      row.type,
+      row.status,
+      row.primary,
+      row.secondary,
+      row.location,
+      row.detail,
+      row.notification?.rideId,
+      row.notification?.driver?.phoneNumber,
+    ]
+    : [
+      row.id,
+      row.type,
+      row.status,
+      row.primary,
+      row.secondary,
+      row.location,
+      row.detail,
+      row.ride?.status,
+      row.ride?.serviceType,
+      row.ride?.dropoffAddress,
+      row.ride?.passenger?.email,
+      row.ride?.driver?.email,
+    ];
+
+  return source.filter(Boolean).join(" ").toLowerCase().includes(query);
+}
+
+const currentHistoryRows = computed(() =>
+  [...panicHistoryRows.value, ...rideIncidentRows.value]
+    .filter(matchesHistorySearch)
+    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()),
+);
+
 const currentRows = computed(() => {
   const rows = activeTab.value.key === "complaints"
     ? complaints.value
@@ -325,6 +420,7 @@ const currentPanicAlerts = computed(() => {
 });
 
 const summary = computed(() => [
+  { label: "Historial", value: currentHistoryRows.value.length, icon: History },
   { label: "Alertas de pánico", value: state.panicAlerts.length, icon: AlertTriangle },
   { label: "Reportes", value: reports.value.length, icon: FileText },
   { label: "Quejas", value: complaints.value.length, icon: Ban },
@@ -355,7 +451,7 @@ onBeforeUnmount(() => {
       <div>
         <p class="text-sm font-medium uppercase tracking-[0.16em] text-slate-500">Operación</p>
         <h1 class="mt-1 text-2xl font-semibold text-slate-950">Incidentes</h1>
-        <p class="mt-1 text-sm text-slate-500">Reportes, quejas y casos especiales derivados de viajes reales.</p>
+        <p class="mt-1 text-sm text-slate-500">Historial, alertas de pánico, reportes, quejas y casos especiales.</p>
       </div>
       <button
         class="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
@@ -375,7 +471,7 @@ onBeforeUnmount(() => {
       {{ state.notificationError }}
     </div>
 
-    <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
       <div v-for="item in summary" :key="item.label" class="rounded-md border border-slate-200 bg-white p-4">
         <div class="flex items-start justify-between gap-3">
           <div>
@@ -395,7 +491,13 @@ onBeforeUnmount(() => {
           <div>
             <h2 class="text-base font-semibold text-slate-950">{{ activeTab.label }}</h2>
             <p class="text-sm text-slate-500">
-              {{ activeTab.key === "panic" ? currentPanicAlerts.length : currentRows.length }} visibles
+              {{
+                activeTab.key === "history"
+                  ? currentHistoryRows.length
+                  : activeTab.key === "panic"
+                    ? currentPanicAlerts.length
+                    : currentRows.length
+              }} visibles
               <span v-if="state.lastUpdatedAt"> · actualizado {{ formatDate(state.lastUpdatedAt) }}</span>
             </p>
           </div>
@@ -404,7 +506,7 @@ onBeforeUnmount(() => {
             <input
               v-model.trim="filters.search"
               class="h-9 w-80 rounded-md border border-slate-300 pl-9 pr-3 text-sm outline-none focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
-              placeholder="Buscar solicitud, cliente, conductor o dirección"
+              placeholder="Buscar incidente, cliente, conductor o dirección"
             />
           </label>
         </div>
@@ -426,7 +528,82 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div v-if="activeTab.key === 'panic'" class="overflow-auto">
+      <div v-if="activeTab.key === 'history'" class="overflow-auto">
+        <table class="w-full min-w-[1120px] border-collapse text-sm">
+          <thead>
+            <tr class="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+              <th class="py-2 pl-4 pr-3">Fecha</th>
+              <th class="py-2 pr-3">Tipo</th>
+              <th class="py-2 pr-3">Estado</th>
+              <th class="py-2 pr-3">Responsable</th>
+              <th class="py-2 pr-3">Referencia</th>
+              <th class="py-2 pr-3">Ubicación</th>
+              <th class="py-2 pr-4">Detalle</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in currentHistoryRows" :key="`${row.kind}-${row.id}`" class="border-b border-slate-100 text-slate-700">
+              <td class="py-3 pl-4 pr-3">
+                <div class="font-medium text-slate-950">{{ formatDate(row.createdAt) }}</div>
+                <div class="text-xs text-slate-500">{{ formatAge(row.createdAt) }}</div>
+              </td>
+              <td class="py-3 pr-3">
+                <span
+                  :class="[
+                    'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium',
+                    row.kind === 'panic'
+                      ? 'border-red-200 bg-red-50 text-red-700'
+                      : 'border-amber-200 bg-amber-50 text-amber-900',
+                  ]"
+                >
+                  <AlertTriangle v-if="row.kind === 'panic'" class="h-3.5 w-3.5" />
+                  <FileText v-else class="h-3.5 w-3.5" />
+                  {{ row.type }}
+                </span>
+              </td>
+              <td class="py-3 pr-3">
+                <span :class="['inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold', row.statusClass]">
+                  {{ row.status }}
+                </span>
+              </td>
+              <td class="py-3 pr-3">
+                <div class="font-medium text-slate-950">{{ row.primary }}</div>
+                <div class="text-xs text-slate-500">{{ row.secondary }}</div>
+              </td>
+              <td class="py-3 pr-3">
+                <div class="flex items-center gap-1">
+                  <span class="font-mono text-xs font-medium text-slate-950">#{{ shortId(row.id) }}</span>
+                  <button
+                    class="grid h-6 w-6 place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-900"
+                    type="button"
+                    title="Copiar ID"
+                    aria-label="Copiar ID"
+                    @click="copyText(row.id)"
+                  >
+                    <Copy class="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div v-if="row.kind === 'panic'" class="mt-1 text-xs text-slate-500">Alerta de conductor</div>
+                <div v-else class="mt-1 text-xs text-slate-500">Servicio</div>
+              </td>
+              <td class="max-w-[260px] truncate py-3 pr-3" :title="row.location">
+                <span :class="row.kind === 'panic' ? 'font-mono text-xs' : ''">{{ row.location }}</span>
+              </td>
+              <td class="max-w-[320px] truncate py-3 pr-4" :title="row.detail">
+                {{ row.detail }}
+              </td>
+            </tr>
+            <tr v-if="!state.loading && currentHistoryRows.length === 0">
+              <td class="py-10 text-center text-slate-500" colspan="7">No hay historial de incidentes.</td>
+            </tr>
+            <tr v-if="state.loading">
+              <td class="py-10 text-center text-slate-500" colspan="7">Cargando historial...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div v-else-if="activeTab.key === 'panic'" class="overflow-auto">
         <table class="w-full min-w-[1120px] border-collapse text-sm">
           <thead>
             <tr class="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">

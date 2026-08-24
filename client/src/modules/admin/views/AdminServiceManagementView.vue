@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, reactive, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { CheckCircle2, RefreshCw, Save, Search, Settings, Tag } from "lucide-vue-next";
+import { CheckCircle2, Plus, RefreshCw, Save, Search, Settings, Tag, X } from "lucide-vue-next";
 import { apiRequest } from "../../../services/api.js";
 import { useOperationalSettings } from "../../../stores/operationalSettings.js";
 
@@ -13,18 +13,25 @@ const router = useRouter();
 const groups = {
   taxi: {
     label: "Taxi",
+    category: "ride",
     codes: ["standard", "premium", "xl", "pool"],
   },
   baul: {
     label: "Baúl",
+    category: "delivery",
+    codePrefix: "baul",
     codes: ["package_delivery"],
   },
   domicilio: {
     label: "Domicilio",
+    category: "delivery",
+    codePrefix: "domicilio",
     codes: ["food_delivery"],
   },
   despinchada: {
     label: "Despinchada",
+    category: "roadside",
+    codePrefix: "despinchada",
     codes: ["car_unstuck", "jump_start", "tire_change"],
   },
 };
@@ -39,6 +46,8 @@ const state = reactive({
   savingCode: "",
   error: "",
   toast: "",
+  createModalOpen: false,
+  creating: false,
   serviceTypes: [],
   drafts: {},
   lastUpdatedAt: null,
@@ -46,6 +55,17 @@ const state = reactive({
 
 const filters = reactive({
   search: "",
+});
+
+const createForm = reactive({
+  code: "",
+  name: "",
+  description: "",
+  icon: "",
+  color: "#2563EB",
+  basePrice: 0,
+  isActive: true,
+  sortOrder: 0,
 });
 
 const activeGroupKey = computed(() => {
@@ -62,9 +82,17 @@ const activeGroup = computed(() => groups[activeGroupKey.value]);
 
 const visibleServices = computed(() => {
   const allowed = new Set(activeGroup.value.codes);
+  const category = activeGroup.value.category;
+  const prefix = activeGroup.value.codePrefix;
   const query = filters.search.trim().toLowerCase();
   return state.serviceTypes
-    .filter((service) => allowed.has(service.code))
+    .filter((service) => {
+      if (allowed.has(service.code)) return true;
+      if (activeGroupKey.value === "taxi") {
+        return service.category === "ride" && !Object.values(groups).some((group) => group.codes.includes(service.code));
+      }
+      return service.category === category && prefix && String(service.code || "").startsWith(`${prefix}_`);
+    })
     .filter((service) => {
       if (!query) return true;
       return [
@@ -123,6 +151,85 @@ function formatDate(value) {
 
 function openSection(section) {
   router.replace(`/admin/servicios/${activeGroupKey.value}/${section}`);
+}
+
+function resetCreateForm() {
+  createForm.code = "";
+  createForm.name = "";
+  createForm.description = "";
+  createForm.icon = "";
+  createForm.color = "#2563EB";
+  createForm.basePrice = 0;
+  createForm.isActive = true;
+  createForm.sortOrder = nextSortOrder();
+}
+
+function openCreateModal() {
+  resetCreateForm();
+  state.error = "";
+  state.toast = "";
+  state.createModalOpen = true;
+}
+
+function closeCreateModal() {
+  if (state.creating) return;
+  state.createModalOpen = false;
+}
+
+function nextSortOrder() {
+  const values = visibleServices.value.map((service) => Number(service.sortOrder || 0));
+  return values.length ? Math.max(...values) + 10 : (activeGroup.value.codes.length + 1) * 10;
+}
+
+function normalizeCodeFromName() {
+  if (createForm.code.trim()) return;
+  const normalizedName = createForm.name
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/^[^a-z]+/, "")
+    .slice(0, 50);
+  const prefix = activeGroup.value.codePrefix;
+  createForm.code = prefix && !normalizedName.startsWith(`${prefix}_`)
+    ? `${prefix}_${normalizedName}`.slice(0, 50)
+    : normalizedName;
+}
+
+async function createService() {
+  state.creating = true;
+  state.error = "";
+  state.toast = "";
+
+  try {
+    const data = await apiRequest("/api/service-types", {
+      method: "POST",
+      body: {
+        code: createForm.code,
+        category: activeGroup.value.category,
+        name: createForm.name,
+        description: createForm.description || null,
+        icon: createForm.icon || null,
+        color: createForm.color || null,
+        basePrice: Number(createForm.basePrice || 0),
+        isActive: Boolean(createForm.isActive),
+        sortOrder: Number(createForm.sortOrder || 0),
+      },
+    });
+    if (data?.serviceType) {
+      state.serviceTypes = [data.serviceType, ...state.serviceTypes];
+      syncDrafts();
+    }
+    state.toast = "Servicio creado.";
+    state.createModalOpen = false;
+    state.lastUpdatedAt = new Date().toISOString();
+  } catch (err) {
+    state.error = err?.message || "No se pudo crear el servicio.";
+  } finally {
+    state.creating = false;
+  }
 }
 
 async function savePrice(service) {
@@ -198,6 +305,14 @@ onMounted(async () => {
       >
         <RefreshCw class="h-4 w-4" />
         Actualizar
+      </button>
+      <button
+        class="inline-flex h-9 items-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-semibold !text-white hover:bg-slate-800"
+        type="button"
+        @click="openCreateModal"
+      >
+        <Plus class="h-4 w-4" />
+        Nuevo servicio
       </button>
     </div>
 
@@ -384,6 +499,121 @@ onMounted(async () => {
           </tbody>
         </table>
       </div>
+    </div>
+
+    <div v-if="state.createModalOpen" class="fixed inset-0 z-[1200] grid place-items-center overflow-y-auto bg-slate-950/40 p-3 sm:p-4">
+      <form class="w-full max-w-2xl rounded-md bg-white shadow-2xl" @submit.prevent="createService">
+        <div class="flex items-start justify-between gap-3 border-b border-slate-200 p-4">
+          <div>
+            <h2 class="text-base font-semibold text-slate-950">Nuevo servicio</h2>
+            <p class="mt-1 text-sm text-slate-500">Se creará dentro del grupo {{ activeGroup.label }}.</p>
+          </div>
+          <button
+            class="grid h-8 w-8 place-items-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-950"
+            type="button"
+            @click="closeCreateModal"
+          >
+            <X class="h-4 w-4" />
+          </button>
+        </div>
+
+        <div class="grid gap-4 p-4">
+          <div class="grid gap-3 sm:grid-cols-2">
+            <label class="grid gap-1 text-sm">
+              <span class="font-medium text-slate-700">Nombre</span>
+              <input
+                v-model.trim="createForm.name"
+                class="h-9 rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
+                placeholder="Taxi Ejecutivo"
+                required
+                @blur="normalizeCodeFromName"
+              />
+            </label>
+            <label class="grid gap-1 text-sm">
+              <span class="font-medium text-slate-700">Código</span>
+              <input
+                v-model.trim="createForm.code"
+                class="h-9 rounded-md border border-slate-300 px-3 font-mono text-sm outline-none focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
+                pattern="[a-z][a-z0-9_-]{1,49}"
+                placeholder="taxi_ejecutivo"
+                required
+              />
+            </label>
+          </div>
+
+          <label class="grid gap-1 text-sm">
+            <span class="font-medium text-slate-700">Descripción</span>
+            <textarea
+              v-model.trim="createForm.description"
+              class="min-h-20 rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
+              placeholder="Descripción visible para operación y app."
+            ></textarea>
+          </label>
+
+          <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <label class="grid gap-1 text-sm">
+              <span class="font-medium text-slate-700">Tarifa base</span>
+              <input
+                v-model.number="createForm.basePrice"
+                class="h-9 rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
+                min="0"
+                step="100"
+                type="number"
+              />
+            </label>
+            <label class="grid gap-1 text-sm">
+              <span class="font-medium text-slate-700">Color</span>
+              <div class="flex items-center gap-2">
+                <input v-model="createForm.color" class="h-9 w-12 rounded-md border border-slate-300 p-1" type="color" />
+                <input
+                  v-model.trim="createForm.color"
+                  class="h-9 min-w-0 flex-1 rounded-md border border-slate-300 px-3 font-mono text-sm outline-none focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
+                  placeholder="#2563EB"
+                />
+              </div>
+            </label>
+            <label class="grid gap-1 text-sm">
+              <span class="font-medium text-slate-700">Icono</span>
+              <input
+                v-model.trim="createForm.icon"
+                class="h-9 rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
+                placeholder="car"
+              />
+            </label>
+            <label class="grid gap-1 text-sm">
+              <span class="font-medium text-slate-700">Orden</span>
+              <input
+                v-model.number="createForm.sortOrder"
+                class="h-9 rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
+                type="number"
+              />
+            </label>
+          </div>
+
+          <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+            <input v-model="createForm.isActive" class="h-4 w-4" type="checkbox" />
+            Crear activo para que aparezca en la app y flujos operativos.
+          </label>
+        </div>
+
+        <div class="flex flex-wrap justify-end gap-2 border-t border-slate-200 p-4">
+          <button
+            class="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            type="button"
+            @click="closeCreateModal"
+          >
+            Cancelar
+          </button>
+          <button
+            class="inline-flex h-9 items-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-semibold !text-white hover:bg-slate-800 disabled:opacity-60"
+            :disabled="state.creating"
+            type="submit"
+          >
+            <Save :class="['h-4 w-4', state.creating ? 'animate-pulse' : '']" />
+            Crear servicio
+          </button>
+        </div>
+      </form>
     </div>
   </section>
 </template>

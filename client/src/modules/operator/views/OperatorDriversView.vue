@@ -4,6 +4,7 @@ import L from "leaflet";
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { Car, MapPin, RefreshCw, Search, UserCheck, WifiOff } from "lucide-vue-next";
+import { addBaseTileLayer } from "../../../components/maps/mapPrimitives.js";
 import { driverPresenceClass, driverPresenceKey, driverPresenceLabel, offlineReasonLabel } from "../../../lib/driverPresence.js";
 import { apiRequest } from "../../../services/api.js";
 import { createRealtimeSocket } from "../../../services/realtime.js";
@@ -219,10 +220,7 @@ function initMap() {
   const center = operationalSettings.mapCenter.value;
   driversMap = L.map(mapEl.value, { zoomControl: false }).setView([center.lat, center.lng], operationalSettings.mapDefaultZoom.value);
   L.control.zoom({ position: "topright" }).addTo(driversMap);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: "&copy; OpenStreetMap",
-    maxZoom: 19,
-  }).addTo(driversMap);
+  addBaseTileLayer(driversMap);
 }
 
 function markerIcon(driver, selected = false) {

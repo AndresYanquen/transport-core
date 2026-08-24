@@ -227,7 +227,19 @@ const routes = [
   {
     path: "/admin/seguridad/usuarios",
     name: "admin-users",
+    alias: "/admin/seguridad/users",
     component: () => import("../modules/admin/views/AdminUsersView.vue"),
+    meta: {
+      layout: "desktop",
+      adminShell: true,
+      requiresAuth: true,
+      requiresAdmin: true,
+    },
+  },
+  {
+    path: "/admin/seguridad/:securityView(roles|permissions|permisos|audit|auditoria)",
+    name: "admin-security",
+    component: () => import("../modules/admin/views/AdminSecurityView.vue"),
     meta: {
       layout: "desktop",
       adminShell: true,
@@ -460,6 +472,7 @@ const routes = [
   {
     path: "/admin/zonas/mapa-de-cobertura",
     name: "admin-zones-coverage-map",
+    alias: ["/admin/zonas/coverage-map", "/admin/zonas/operational-zones"],
     component: () => import("../modules/admin/views/AdminZonesMapView.vue"),
     meta: {
       layout: "desktop",

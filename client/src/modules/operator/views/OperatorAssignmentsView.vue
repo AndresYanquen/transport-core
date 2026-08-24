@@ -19,6 +19,7 @@ import {
   X,
 } from "lucide-vue-next";
 import { apiRequest } from "../../../services/api.js";
+import { addBaseTileLayer } from "../../../components/maps/mapPrimitives.js";
 import { createRealtimeSocket } from "../../../services/realtime.js";
 import { useAuthStore } from "../../../stores/auth.js";
 import { useOperationalSettings } from "../../../stores/operationalSettings.js";
@@ -425,10 +426,7 @@ function initMap() {
   const center = operationalSettings.mapCenter.value;
   assignmentMap = L.map(mapEl.value, { zoomControl: false }).setView([center.lat, center.lng], 14);
   L.control.zoom({ position: "topright" }).addTo(assignmentMap);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: "&copy; OpenStreetMap",
-    maxZoom: 19,
-  }).addTo(assignmentMap);
+  addBaseTileLayer(assignmentMap);
 }
 
 function makeIcon(label, className) {
