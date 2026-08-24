@@ -41,12 +41,31 @@ exports.up = async function up(knex) {
       EXECUTE FUNCTION update_timestamp();
     `);
   }
+
+  const hasWhatsappWebhookEvents = await knex.schema.hasTable("whatsapp_webhook_events");
+  if (!hasWhatsappWebhookEvents) {
+    await knex.schema.createTable("whatsapp_webhook_events", (table) => {
+      table
+        .uuid("id")
+        .primary()
+        .defaultTo(knex.raw("gen_random_uuid()"));
+      table.string("idempotency_key", 128).notNullable().unique();
+      table.string("event_type", 100).notNullable();
+      table.timestamp("processed_at");
+      table.timestamp("created_at").notNullable().defaultTo(knex.fn.now());
+
+      table.index(["event_type"], "whatsapp_webhook_events_event_type_idx");
+      table.index(["processed_at"], "whatsapp_webhook_events_processed_at_idx");
+    });
+  }
 };
 
 /**
  * @param {import('knex').Knex} knex
  */
 exports.down = async function down(knex) {
+  await knex.schema.dropTableIfExists("whatsapp_webhook_events");
+
   await knex.schema.raw(`
     DROP TRIGGER IF EXISTS set_whatsapp_sessions_updated_at ON whatsapp_sessions;
   `);

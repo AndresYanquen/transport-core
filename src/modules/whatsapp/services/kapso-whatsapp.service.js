@@ -1,13 +1,17 @@
+const crypto = require("crypto");
+
+const { logger } = require("../../../config/logger");
 const AuthModel = require("../../auth/models/auth.model");
 const { normalizePhoneNumber } = require("../../auth/utils/phone");
 const RideService = require("../../rides/services/ride.service");
 const WhatsappSessionModel = require("../models/whatsapp-session.model");
+const WhatsappWebhookEventModel = require("../models/whatsapp-webhook-event.model");
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
+const KAPSO_MESSAGE_RECEIVED_EVENT = "whatsapp.message.received";
 const STATES = {
   START: "START",
   WAITING_PICKUP: "WAITING_PICKUP",
-  WAITING_DESTINATION: "WAITING_DESTINATION",
   WAITING_CONFIRMATION: "WAITING_CONFIRMATION",
 };
 
@@ -76,6 +80,26 @@ function extractMessage(payload = {}) {
     location: extractLocation(payload),
     raw: payload,
   };
+}
+
+function verifyKapsoWebhook(payload, signature, secret) {
+  if (!signature || !secret) {
+    return false;
+  }
+
+  const expectedSignature = crypto
+    .createHmac("sha256", secret)
+    .update(JSON.stringify(payload))
+    .digest("hex");
+
+  if (signature.length !== expectedSignature.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(expectedSignature)
+  );
 }
 
 function isTaxiIntent(text = "") {
@@ -182,7 +206,7 @@ async function handleKapsoWebhook(payload) {
     const nextSession = await WhatsappSessionModel.upsertSession({
       phone,
       userId: client.id,
-      state: STATES.WAITING_DESTINATION,
+      state: STATES.WAITING_CONFIRMATION,
       context: {
         ...session.context,
         pickupLat: message.location.lat,
@@ -194,32 +218,7 @@ async function handleKapsoWebhook(payload) {
 
     return buildResponse({
       session: nextSession,
-      reply: "Recibido. Ahora escribe el destino.",
-    });
-  }
-
-  if (session.state === STATES.WAITING_DESTINATION) {
-    if (!text) {
-      return buildResponse({
-        session,
-        reply: "Escribe el destino para continuar.",
-      });
-    }
-
-    const nextSession = await WhatsappSessionModel.upsertSession({
-      phone,
-      userId: client.id,
-      state: STATES.WAITING_CONFIRMATION,
-      context: {
-        ...session.context,
-        dropoffAddress: text,
-      },
-      expiresAt: expiresAt(),
-    });
-
-    return buildResponse({
-      session: nextSession,
-      reply: `Confirma tu taxi desde ${nextSession.context.pickupAddress} hacia ${text}. Responde SI para confirmar.`,
+      reply: `Recibido. Confirma tu taxi desde ${nextSession.context.pickupAddress}. Responde SI para confirmar.`,
     });
   }
 
@@ -261,6 +260,12 @@ async function handleKapsoWebhook(payload) {
       expiresAt: expiresAt(),
     });
 
+    logger.info("kapso_ride_created", {
+      rideId: rideResult.ride.id,
+      phone,
+      source: "whatsapp",
+    });
+
     return buildResponse({
       session: nextSession,
       ride: rideResult.ride,
@@ -280,12 +285,115 @@ async function handleKapsoWebhook(payload) {
   });
 }
 
+function getHeader(headers = {}, name) {
+  const normalizedName = name.toLowerCase();
+  return headers[name] || headers[normalizedName] || null;
+}
+
+async function processKapsoWebhookRequest({ payload, headers = {} }) {
+  const eventType = getHeader(headers, "x-webhook-event");
+  const signature = getHeader(headers, "x-webhook-signature");
+  const idempotencyKey = getHeader(headers, "x-idempotency-key");
+  const payloadVersion = getHeader(headers, "x-webhook-payload-version");
+  const isBatch = String(getHeader(headers, "x-webhook-batch") || "").toLowerCase() === "true";
+
+  logger.info("kapso_webhook_received", {
+    eventType,
+    hasSignature: Boolean(signature),
+    hasIdempotencyKey: Boolean(idempotencyKey),
+    payloadVersion: payloadVersion || null,
+    isBatch,
+  });
+
+  if (eventType !== KAPSO_MESSAGE_RECEIVED_EVENT) {
+    return {
+      statusCode: 200,
+      body: {
+        ignored: true,
+        eventType,
+      },
+    };
+  }
+
+  const validSignature = verifyKapsoWebhook(
+    payload,
+    signature,
+    process.env.KAPSO_WEBHOOK_SECRET
+  );
+
+  if (!validSignature) {
+    logger.warn("kapso_webhook_invalid_signature", {
+      eventType,
+      hasSignature: Boolean(signature),
+      signatureLength: signature ? String(signature).length : 0,
+    });
+
+    return {
+      statusCode: 401,
+      body: {
+        message: "Invalid signature",
+      },
+    };
+  }
+
+  if (!idempotencyKey) {
+    throw createHttpError(400, "X-Idempotency-Key header is required.");
+  }
+
+  const reservation = await WhatsappWebhookEventModel.reserveIdempotencyKey({
+    idempotencyKey,
+    eventType,
+  });
+
+  if (!reservation.reserved) {
+    logger.info("kapso_webhook_duplicate", {
+      eventType,
+      idempotencyKey,
+    });
+
+    return {
+      statusCode: 200,
+      body: {
+        duplicate: true,
+      },
+    };
+  }
+
+  try {
+    logger.info("kapso_message_received", {
+      eventType,
+      idempotencyKey,
+      payloadVersion: payloadVersion || null,
+      isBatch,
+    });
+
+    const result = await handleKapsoWebhook(payload);
+    await WhatsappWebhookEventModel.markProcessed(idempotencyKey);
+
+    return {
+      statusCode: 200,
+      body: result,
+    };
+  } catch (error) {
+    await WhatsappWebhookEventModel.releaseReservation(idempotencyKey);
+    logger.error("kapso_webhook_processing_failed", {
+      eventType,
+      idempotencyKey,
+      error,
+    });
+    throw error;
+  }
+}
+
 module.exports = {
   handleKapsoWebhook,
+  processKapsoWebhookRequest,
   __private: {
     extractMessage,
     isTaxiIntent,
     isConfirmation,
+    verifyKapsoWebhook,
+    KAPSO_MESSAGE_RECEIVED_EVENT,
     STATES,
   },
 };
