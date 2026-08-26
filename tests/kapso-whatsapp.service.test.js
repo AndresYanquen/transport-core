@@ -13,6 +13,7 @@ const {
   isTaxiIntent,
   isConfirmation,
   verifyKapsoWebhook,
+  summarizeKapsoPayload,
   KAPSO_MESSAGE_RECEIVED_EVENT,
 } = KapsoWhatsappService.__private;
 
@@ -159,6 +160,55 @@ test("extractMessage accepts Kapso v2 conversation phone and text body", () => {
 
   assert.equal(message.phone, "+15551234567");
   assert.equal(message.text, "This is a test message from Kapso webhook testing");
+});
+
+test("summarizeKapsoPayload logs Kapso v2 shape without full raw payload", () => {
+  const summary = summarizeKapsoPayload({
+    test: true,
+    message: {
+      id: "wamid.TEST",
+      from: "+15551234567",
+      text: {
+        body: "This is a test message from Kapso webhook testing",
+      },
+      type: "text",
+      kapso: {
+        origin: "cloud_api",
+        direction: "inbound",
+      },
+      timestamp: "1787702808",
+    },
+    conversation: {
+      id: "test-conv",
+      status: "active",
+      username: "kapso_test_user",
+      contact_name: "kapso_test_user",
+      phone_number: "+15551234567",
+      phone_number_id: "597907523413541",
+      kapso: {
+        messages_count: 0,
+      },
+      last_active_at: "2026-08-25T20:06:48-04:00",
+    },
+    phone_number_id: "597907523413541",
+    is_new_conversation: false,
+  });
+
+  assert.deepEqual(summary.topLevelKeys, [
+    "conversation",
+    "is_new_conversation",
+    "message",
+    "phone_number_id",
+    "test",
+  ]);
+  assert.equal(summary.test, true);
+  assert.equal(summary.phoneNumberId, "597907523413541");
+  assert.equal(summary.message.id, "wamid.TEST");
+  assert.equal(summary.message.type, "text");
+  assert.equal(summary.message.from, "+15551234567");
+  assert.equal(summary.message.textPreview, "This is a test message from Kapso webhook testing");
+  assert.equal(summary.conversation.id, "test-conv");
+  assert.equal(summary.conversation.phoneNumber, "+15551234567");
 });
 
 test("extractMessage accepts nested location payloads", () => {

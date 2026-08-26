@@ -89,6 +89,56 @@ function isKapsoTestPayload(payload = {}) {
   return payload.test === true;
 }
 
+function truncateForLog(value, maxLength = 160) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
+}
+
+function summarizeKapsoPayload(payload = {}) {
+  const message = extractMessage(payload);
+
+  return {
+    topLevelKeys: Object.keys(payload).sort(),
+    test: isKapsoTestPayload(payload),
+    phoneNumberId: payload.phone_number_id || payload.conversation?.phone_number_id || null,
+    isNewConversation:
+      typeof payload.is_new_conversation === "boolean"
+        ? payload.is_new_conversation
+        : null,
+    message: {
+      id: payload.message?.id || payload.id || payload.data?.id || null,
+      type: payload.message?.type || payload.type || payload.data?.type || null,
+      from: message.phone || null,
+      textPreview: truncateForLog(message.text),
+      hasText: Boolean(message.text),
+      hasLocation: Boolean(message.location),
+      location: message.location
+        ? {
+            lat: message.location.lat,
+            lng: message.location.lng,
+            hasAddress: Boolean(message.location.address),
+          }
+        : null,
+      timestamp: payload.message?.timestamp || payload.timestamp || payload.data?.timestamp || null,
+      kapso: payload.message?.kapso || payload.kapso || null,
+    },
+    conversation: payload.conversation
+      ? {
+          id: payload.conversation.id || null,
+          status: payload.conversation.status || null,
+          username: payload.conversation.username || null,
+          contactName: payload.conversation.contact_name || null,
+          phoneNumber: payload.conversation.phone_number || null,
+          messagesCount: payload.conversation.kapso?.messages_count ?? null,
+          lastActiveAt: payload.conversation.last_active_at || null,
+        }
+      : null,
+  };
+}
+
 function buildKapsoTestPhone(phone) {
   return phone ? `t${phone}` : null;
 }
@@ -351,6 +401,13 @@ async function processKapsoWebhookRequest({ payload, headers = {} }) {
     payloadVersion: payloadVersion || null,
     isBatch,
   });
+  logger.info("kapso_whatsapp_payload_received", {
+    eventType,
+    idempotencyKey: idempotencyKey || null,
+    payloadVersion: payloadVersion || null,
+    isBatch,
+    payload: summarizeKapsoPayload(payload),
+  });
 
   if (eventType !== KAPSO_MESSAGE_RECEIVED_EVENT) {
     return {
@@ -452,6 +509,7 @@ module.exports = {
     isKapsoTestPayload,
     buildKapsoTestPhone,
     buildKapsoTestContext,
+    summarizeKapsoPayload,
     KAPSO_MESSAGE_RECEIVED_EVENT,
     STATES,
   },
