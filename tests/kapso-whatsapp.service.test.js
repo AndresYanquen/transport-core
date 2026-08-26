@@ -37,7 +37,11 @@ function buildHeaders(payload, overrides = {}) {
   };
 }
 
-function installConversationStubs(t, { initialSession, duplicate = false } = {}) {
+function installConversationStubs(t, {
+  initialSession,
+  duplicate = false,
+  createRideError = null,
+} = {}) {
   const originalSecret = process.env.KAPSO_WEBHOOK_SECRET;
   const originalFindClientByPhoneNumber = AuthModel.findClientByPhoneNumber;
   const originalCreatePhoneOnlyClient = AuthModel.createPhoneOnlyClient;
@@ -108,6 +112,10 @@ function installConversationStubs(t, { initialSession, duplicate = false } = {})
     calls.released.push(idempotencyKey);
   };
   RideService.createRide = async (payload) => {
+    if (createRideError) {
+      throw createRideError;
+    }
+
     calls.createdRides.push(payload);
     return {
       ride: {
@@ -593,6 +601,63 @@ test("processKapsoWebhookRequest skips duplicate batch delivery idempotency keys
   assert.equal(result.statusCode, 200);
   assert.equal(result.body.duplicate, true);
   assert.equal(calls.sessions.length, 0);
+});
+
+test("processKapsoWebhookRequest marks well-formed batches processed when an event fails", async (t) => {
+  const createRideError = new Error("Client already has an active ride.");
+  createRideError.status = 409;
+  const calls = installConversationStubs(t, {
+    initialSession: {
+      id: "session-1",
+      phone: "+573001234567",
+      userId: "client-1",
+      state: "WAITING_CONFIRMATION",
+      context: {
+        serviceType: "standard",
+        pickupLat: 5.535,
+        pickupLng: -73.367,
+        pickupAddress: "Centro",
+      },
+      expiresAt: new Date(Date.now() + 60_000),
+    },
+    createRideError,
+  });
+  const payload = {
+    batch: true,
+    data: [
+      {
+        message: {
+          id: "wamid.FAIL",
+          from: "+573001234567",
+          text: {
+            body: "SI",
+          },
+          type: "text",
+        },
+        conversation: {
+          id: "conv-fail",
+          phone_number: "+573001234567",
+          phone_number_id: "phone-number-id-1",
+        },
+      },
+    ],
+  };
+
+  const result = await KapsoWhatsappService.processKapsoWebhookRequest({
+    payload,
+    headers: buildHeaders(payload, {
+      "x-idempotency-key": "batch-event-fails",
+      "x-webhook-batch": "true",
+    }),
+  });
+
+  assert.equal(result.statusCode, 200);
+  assert.equal(result.body.batch, true);
+  assert.equal(result.body.processedCount, 0);
+  assert.equal(result.body.failedCount, 1);
+  assert.equal(result.body.results[0].status, 409);
+  assert.deepEqual(calls.markedProcessed, ["batch-event-fails"]);
+  assert.equal(calls.released.length, 0);
 });
 
 test("processKapsoWebhookRequest rejects malformed batch payloads", async (t) => {

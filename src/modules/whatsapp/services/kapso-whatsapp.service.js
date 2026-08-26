@@ -356,9 +356,21 @@ async function processKapsoWebhookRequest({ payload, headers = {} }) {
           });
         } catch (error) {
           failedCount += 1;
+          logger.warn("kapso_batch_event_failed", {
+            eventType,
+            idempotencyKey,
+            eventIndex: results.length,
+            payload: summarizeKapsoPayload(eventPayload),
+            error: {
+              name: error.name,
+              message: error.message,
+              status: error.status || null,
+            },
+          });
           results.push({
             ok: false,
             message: error.message,
+            status: error.status || null,
           });
         }
       }
@@ -370,13 +382,6 @@ async function processKapsoWebhookRequest({ payload, headers = {} }) {
         processedCount,
         failedCount,
       });
-
-      if (failedCount > 0) {
-        throw createHttpError(
-          400,
-          `Kapso batch processing failed for ${failedCount} event(s).`
-        );
-      }
 
       result = {
         batch: true,
