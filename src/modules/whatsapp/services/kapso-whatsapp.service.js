@@ -338,7 +338,14 @@ async function processKapsoWebhookRequest({ payload, headers = {} }) {
       let processedCount = 0;
       let failedCount = 0;
 
-      for (const eventPayload of batchEvents) {
+      for (const [eventIndex, eventPayload] of batchEvents.entries()) {
+        logger.info("kapso_batch_event_received", {
+          eventType,
+          idempotencyKey,
+          eventIndex,
+          payload: summarizeKapsoPayload(eventPayload),
+        });
+
         try {
           const eventResult = isKapsoTestPayload(eventPayload)
             ? await handleKapsoTestWebhook(eventPayload)
@@ -359,7 +366,7 @@ async function processKapsoWebhookRequest({ payload, headers = {} }) {
           logger.warn("kapso_batch_event_failed", {
             eventType,
             idempotencyKey,
-            eventIndex: results.length,
+            eventIndex,
             payload: summarizeKapsoPayload(eventPayload),
             error: {
               name: error.name,
@@ -382,6 +389,10 @@ async function processKapsoWebhookRequest({ payload, headers = {} }) {
         processedCount,
         failedCount,
       });
+
+      if (failedCount > 0) {
+        throw createHttpError(500, "Kapso batch processing failed.");
+      }
 
       result = {
         batch: true,

@@ -79,6 +79,22 @@ function buildResponse({ reply, session, ride = null }) {
   };
 }
 
+function logConversationDecision({ phone, message, session, nextSession, action, ride = null }) {
+  logger.info("kapso_conversation_decision", {
+    phone,
+    previousState: session?.state ?? null,
+    nextState: nextSession?.state ?? session?.state ?? null,
+    action,
+    hasText: Boolean(message?.text),
+    textPreview:
+      typeof message?.text === "string"
+        ? message.text.slice(0, 80)
+        : null,
+    hasLocation: Boolean(message?.location),
+    rideId: ride?.id ?? null,
+  });
+}
+
 async function handleMessage({ payload, message }) {
   if (!message.phone) {
     throw createHttpError(400, "Kapso WhatsApp payload must include sender phone.");
@@ -112,6 +128,14 @@ async function handleMessage({ payload, message }) {
         expiresAt: expiresAt(),
       });
 
+      logConversationDecision({
+        phone,
+        message,
+        session,
+        nextSession,
+        action: "show_menu",
+      });
+
       return buildResponse({
         session: nextSession,
         reply: "Hola. Responde Taxi para pedir un servicio.",
@@ -126,6 +150,14 @@ async function handleMessage({ payload, message }) {
       expiresAt: expiresAt(),
     });
 
+    logConversationDecision({
+      phone,
+      message,
+      session,
+      nextSession,
+      action: "request_pickup",
+    });
+
     return buildResponse({
       session: nextSession,
       reply: "Listo. Comparte tu ubicacion de origen por WhatsApp.",
@@ -134,6 +166,14 @@ async function handleMessage({ payload, message }) {
 
   if (session.state === STATES.WAITING_PICKUP) {
     if (!message.location) {
+      logConversationDecision({
+        phone,
+        message,
+        session,
+        nextSession: session,
+        action: "missing_pickup_location",
+      });
+
       return buildResponse({
         session,
         reply: "Necesito la ubicacion de origen. Usa compartir ubicacion en WhatsApp.",
@@ -153,6 +193,14 @@ async function handleMessage({ payload, message }) {
       expiresAt: expiresAt(),
     });
 
+    logConversationDecision({
+      phone,
+      message,
+      session,
+      nextSession,
+      action: "pickup_received",
+    });
+
     return buildResponse({
       session: nextSession,
       reply: `Recibido. Confirma tu taxi desde ${nextSession.context.pickupAddress}. Responde SI para confirmar.`,
@@ -161,6 +209,14 @@ async function handleMessage({ payload, message }) {
 
   if (session.state === STATES.WAITING_CONFIRMATION) {
     if (!isConfirmation(text)) {
+      logConversationDecision({
+        phone,
+        message,
+        session,
+        nextSession: session,
+        action: "await_confirmation",
+      });
+
       return buildResponse({
         session,
         reply: "Servicio pendiente de confirmacion. Responde SI para confirmar o Taxi para empezar de nuevo.",
@@ -201,6 +257,14 @@ async function handleMessage({ payload, message }) {
       rideId: rideResult.ride.id,
       phone,
       source: "whatsapp",
+    });
+    logConversationDecision({
+      phone,
+      message,
+      session,
+      nextSession,
+      action: "ride_created",
+      ride: rideResult.ride,
     });
 
     return buildResponse({

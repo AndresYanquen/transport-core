@@ -603,7 +603,7 @@ test("processKapsoWebhookRequest skips duplicate batch delivery idempotency keys
   assert.equal(calls.sessions.length, 0);
 });
 
-test("processKapsoWebhookRequest marks well-formed batches processed when an event fails", async (t) => {
+test("processKapsoWebhookRequest releases batch idempotency when an event fails", async (t) => {
   const createRideError = new Error("Client already has an active ride.");
   createRideError.status = 409;
   const calls = installConversationStubs(t, {
@@ -643,21 +643,22 @@ test("processKapsoWebhookRequest marks well-formed batches processed when an eve
     ],
   };
 
-  const result = await KapsoWhatsappService.processKapsoWebhookRequest({
-    payload,
-    headers: buildHeaders(payload, {
-      "x-idempotency-key": "batch-event-fails",
-      "x-webhook-batch": "true",
-    }),
-  });
+  await assert.rejects(
+    () =>
+      KapsoWhatsappService.processKapsoWebhookRequest({
+        payload,
+        headers: buildHeaders(payload, {
+          "x-idempotency-key": "batch-event-fails",
+          "x-webhook-batch": "true",
+        }),
+      }),
+    (error) =>
+      error.status === 500 &&
+      /batch processing failed/.test(error.message)
+  );
 
-  assert.equal(result.statusCode, 200);
-  assert.equal(result.body.batch, true);
-  assert.equal(result.body.processedCount, 0);
-  assert.equal(result.body.failedCount, 1);
-  assert.equal(result.body.results[0].status, 409);
-  assert.deepEqual(calls.markedProcessed, ["batch-event-fails"]);
-  assert.equal(calls.released.length, 0);
+  assert.deepEqual(calls.markedProcessed, []);
+  assert.deepEqual(calls.released, ["batch-event-fails"]);
 });
 
 test("processKapsoWebhookRequest rejects malformed batch payloads", async (t) => {
