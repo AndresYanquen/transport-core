@@ -6,6 +6,7 @@ const AuthModel = require("../src/modules/auth/models/auth.model");
 const RideService = require("../src/modules/rides/services/ride.service");
 const WhatsappSessionModel = require("../src/modules/whatsapp/models/whatsapp-session.model");
 const WhatsappWebhookEventModel = require("../src/modules/whatsapp/models/whatsapp-webhook-event.model");
+const KapsoClient = require("../src/modules/whatsapp/services/kapso-client.service");
 const KapsoWhatsappService = require("../src/modules/whatsapp/services/kapso-whatsapp.service");
 
 const {
@@ -47,10 +48,12 @@ function installConversationStubs(t, { initialSession, duplicate = false } = {})
   const originalMarkProcessed = WhatsappWebhookEventModel.markProcessed;
   const originalReleaseReservation = WhatsappWebhookEventModel.releaseReservation;
   const originalCreateRide = RideService.createRide;
+  const originalSendWhatsappText = KapsoClient.sendWhatsappText;
 
   const calls = {
     createdRides: [],
     markedProcessed: [],
+    outboundMessages: [],
     released: [],
     reserved: [],
     sessions: [],
@@ -114,6 +117,13 @@ function installConversationStubs(t, { initialSession, duplicate = false } = {})
       },
     };
   };
+  KapsoClient.sendWhatsappText = async (message) => {
+    calls.outboundMessages.push(message);
+    return {
+      skipped: false,
+      status: 200,
+    };
+  };
 
   t.after(() => {
     process.env.KAPSO_WEBHOOK_SECRET = originalSecret;
@@ -126,6 +136,7 @@ function installConversationStubs(t, { initialSession, duplicate = false } = {})
     WhatsappWebhookEventModel.markProcessed = originalMarkProcessed;
     WhatsappWebhookEventModel.releaseReservation = originalReleaseReservation;
     RideService.createRide = originalCreateRide;
+    KapsoClient.sendWhatsappText = originalSendWhatsappText;
   });
 
   return calls;
@@ -326,6 +337,7 @@ test("processKapsoWebhookRequest stores Kapso test payloads with a test phone", 
       username: "kapso_test_user",
       contact_name: "kapso_test_user",
       phone_number: "+15551234567",
+      phone_number_id: "phone-number-id-1",
     },
   };
 
@@ -348,6 +360,20 @@ test("processKapsoWebhookRequest stores Kapso test payloads with a test phone", 
   assert.equal(calls.sessions[0].context.kapsoConversationId, "test-conv");
   assert.equal(calls.sessions[0].context.kapsoUsername, "kapso_test_user");
   assert.equal(calls.createdRides.length, 0);
+  assert.deepEqual(calls.outboundMessages, [
+    {
+      phoneNumberId: "phone-number-id-1",
+      to: "+15551234567",
+      body: "Kapso test payload received.",
+    },
+  ]);
+});
+
+test("Kapso client normalizes WhatsApp recipients for outbound messages", () => {
+  assert.equal(
+    KapsoClient.__private.normalizeWhatsappRecipient("+57 323 368 6356"),
+    "573233686356"
+  );
 });
 
 test("processKapsoWebhookRequest processes an individual Kapso v2 event", async (t) => {
@@ -364,6 +390,7 @@ test("processKapsoWebhookRequest processes an individual Kapso v2 event", async 
     conversation: {
       id: "conv-real",
       phone_number: "+573001234567",
+      phone_number_id: "phone-number-id-1",
     },
   };
 
@@ -378,6 +405,48 @@ test("processKapsoWebhookRequest processes an individual Kapso v2 event", async 
   assert.equal(result.body.state, "WAITING_PICKUP");
   assert.equal(calls.sessions.at(-1).phone, "+573001234567");
   assert.equal(calls.sessions.at(-1).state, "WAITING_PICKUP");
+  assert.deepEqual(calls.outboundMessages, [
+    {
+      phoneNumberId: "phone-number-id-1",
+      to: "+573001234567",
+      body: "Listo. Comparte tu ubicacion de origen por WhatsApp.",
+    },
+  ]);
+});
+
+test("processKapsoWebhookRequest keeps inbound processing when outbound send fails", async (t) => {
+  const calls = installConversationStubs(t);
+  KapsoClient.sendWhatsappText = async () => {
+    throw new Error("Kapso outbound unavailable");
+  };
+  const payload = {
+    message: {
+      id: "wamid.REAL",
+      from: "+573001234567",
+      text: {
+        body: "Taxi",
+      },
+      type: "text",
+    },
+    conversation: {
+      id: "conv-real",
+      phone_number: "+573001234567",
+      phone_number_id: "phone-number-id-1",
+    },
+  };
+
+  const result = await KapsoWhatsappService.processKapsoWebhookRequest({
+    payload,
+    headers: buildHeaders(payload, {
+      "x-idempotency-key": "outbound-fails",
+    }),
+  });
+
+  assert.equal(result.statusCode, 200);
+  assert.equal(result.body.state, "WAITING_PICKUP");
+  assert.equal(calls.sessions.at(-1).state, "WAITING_PICKUP");
+  assert.deepEqual(calls.markedProcessed, ["outbound-fails"]);
+  assert.equal(calls.released.length, 0);
 });
 
 test("processKapsoWebhookRequest processes a batch with one message", async (t) => {
@@ -401,6 +470,7 @@ test("processKapsoWebhookRequest processes a batch with one message", async (t) 
         conversation: {
           id: "conv-batch-1",
           phone_number: "+573001234567",
+          phone_number_id: "phone-number-id-1",
         },
       },
     ],
@@ -421,6 +491,9 @@ test("processKapsoWebhookRequest processes a batch with one message", async (t) 
   assert.equal(result.body.failedCount, 0);
   assert.equal(calls.sessions.at(-1).state, "WAITING_PICKUP");
   assert.deepEqual(calls.markedProcessed, ["batch-one"]);
+  assert.equal(calls.outboundMessages.length, 1);
+  assert.equal(calls.outboundMessages[0].phoneNumberId, "phone-number-id-1");
+  assert.equal(calls.outboundMessages[0].to, "+573001234567");
 });
 
 test("processKapsoWebhookRequest processes a batch with multiple messages", async (t) => {
@@ -444,6 +517,7 @@ test("processKapsoWebhookRequest processes a batch with multiple messages", asyn
         conversation: {
           id: "conv-batch-2",
           phone_number: "+573001234567",
+          phone_number_id: "phone-number-id-1",
         },
       },
       {
@@ -460,6 +534,7 @@ test("processKapsoWebhookRequest processes a batch with multiple messages", asyn
         conversation: {
           id: "conv-batch-2",
           phone_number: "+573001234567",
+          phone_number_id: "phone-number-id-1",
         },
       },
     ],
@@ -480,6 +555,12 @@ test("processKapsoWebhookRequest processes a batch with multiple messages", asyn
   assert.equal(calls.sessions.at(-1).state, "WAITING_CONFIRMATION");
   assert.equal(calls.sessions.at(-1).context.pickupLat, 5.535);
   assert.equal(calls.sessions.at(-1).context.pickupLng, -73.367);
+  assert.equal(calls.outboundMessages.length, 2);
+  assert.equal(calls.outboundMessages[0].body, "Listo. Comparte tu ubicacion de origen por WhatsApp.");
+  assert.equal(
+    calls.outboundMessages[1].body,
+    "Recibido. Confirma tu taxi desde Centro. Responde SI para confirmar."
+  );
 });
 
 test("processKapsoWebhookRequest skips duplicate batch delivery idempotency keys", async (t) => {

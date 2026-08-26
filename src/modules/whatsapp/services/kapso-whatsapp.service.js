@@ -1,28 +1,16 @@
 const crypto = require("crypto");
 
 const { logger } = require("../../../config/logger");
-const AuthModel = require("../../auth/models/auth.model");
-const { normalizePhoneNumber } = require("../../auth/utils/phone");
-const RideService = require("../../rides/services/ride.service");
-const WhatsappSessionModel = require("../models/whatsapp-session.model");
+const KapsoClient = require("./kapso-client.service");
+const WhatsappBotService = require("./whatsapp-bot.service");
 const WhatsappWebhookEventModel = require("../models/whatsapp-webhook-event.model");
 
-const SESSION_TTL_MS = 30 * 60 * 1000;
 const KAPSO_MESSAGE_RECEIVED_EVENT = "whatsapp.message.received";
-const STATES = {
-  START: "START",
-  WAITING_PICKUP: "WAITING_PICKUP",
-  WAITING_CONFIRMATION: "WAITING_CONFIRMATION",
-};
 
 function createHttpError(status, message) {
   const error = new Error(message);
   error.status = status;
   return error;
-}
-
-function expiresAt() {
-  return new Date(Date.now() + SESSION_TTL_MS);
 }
 
 function pickFirstString(...values) {
@@ -155,25 +143,6 @@ function extractKapsoBatchEvents(payload = {}) {
   return null;
 }
 
-function buildKapsoTestPhone(phone) {
-  return phone ? `t${phone}` : null;
-}
-
-function buildKapsoTestContext(payload = {}, message = {}) {
-  return {
-    kapsoTest: true,
-    realPhone: message.phone || null,
-    kapsoConversationId: payload.conversation?.id || null,
-    kapsoUsername:
-      payload.conversation?.username ||
-      payload.message?.username ||
-      null,
-    kapsoContactName: payload.conversation?.contact_name || null,
-    kapsoMessageId: payload.message?.id || null,
-    lastText: message.text || null,
-  };
-}
-
 function verifyKapsoWebhook(payload, signature, secret) {
   if (!signature || !secret) {
     return false;
@@ -194,208 +163,63 @@ function verifyKapsoWebhook(payload, signature, secret) {
   );
 }
 
-function isTaxiIntent(text = "") {
-  return /\b(taxi|carro|viaje|servicio)\b/i.test(text);
-}
-
-function isConfirmation(text = "") {
-  return /^(si|sí|confirmo|confirmar|ok|dale|listo|1)$/i.test(text.trim());
-}
-
-async function ensureWhatsappClient(phone) {
-  const existingClient = await AuthModel.findClientByPhoneNumber(phone);
-  if (existingClient) {
-    return {
-      client: existingClient,
-      created: false,
-    };
-  }
-
-  const client = await AuthModel.createPhoneOnlyClient({
-    phoneNumber: phone,
-    firstName: "WhatsApp",
-    lastName: null,
-    createdByOperatorId: null,
-    source: "whatsapp",
-  });
-
-  return {
-    client,
-    created: true,
-  };
-}
-
-function buildResponse({ reply, session, ride = null }) {
-  return {
-    reply,
-    state: session?.state ?? null,
-    rideId: ride?.id ?? null,
-  };
-}
-
 async function handleKapsoWebhook(payload) {
   const message = extractMessage(payload);
-  if (!message.phone) {
-    throw createHttpError(400, "Kapso WhatsApp payload must include sender phone.");
-  }
-
-  const phone = normalizePhoneNumber(message.phone);
-  const { client, created } = await ensureWhatsappClient(phone);
-  const existingSession = await WhatsappSessionModel.findByPhone(phone);
-  const session =
-    existingSession && new Date(existingSession.expiresAt).getTime() > Date.now()
-      ? existingSession
-      : await WhatsappSessionModel.resetSession({
-          phone,
-          userId: client.id,
-          expiresAt: expiresAt(),
-        });
-
-  if (created) {
-    session.context.phoneOnlyClientCreated = true;
-  }
-
-  const text = message.text || "";
-
-  if (session.state === STATES.START) {
-    if (!isTaxiIntent(text)) {
-      const nextSession = await WhatsappSessionModel.upsertSession({
-        phone,
-        userId: client.id,
-        state: STATES.START,
-        context: {},
-        expiresAt: expiresAt(),
-      });
-
-      return buildResponse({
-        session: nextSession,
-        reply: "Hola. Responde Taxi para pedir un servicio.",
-      });
-    }
-
-    const nextSession = await WhatsappSessionModel.upsertSession({
-      phone,
-      userId: client.id,
-      state: STATES.WAITING_PICKUP,
-      context: { serviceType: "standard" },
-      expiresAt: expiresAt(),
-    });
-
-    return buildResponse({
-      session: nextSession,
-      reply: "Listo. Comparte tu ubicacion de origen por WhatsApp.",
-    });
-  }
-
-  if (session.state === STATES.WAITING_PICKUP) {
-    if (!message.location) {
-      return buildResponse({
-        session,
-        reply: "Necesito la ubicacion de origen. Usa compartir ubicacion en WhatsApp.",
-      });
-    }
-
-    const nextSession = await WhatsappSessionModel.upsertSession({
-      phone,
-      userId: client.id,
-      state: STATES.WAITING_CONFIRMATION,
-      context: {
-        ...session.context,
-        pickupLat: message.location.lat,
-        pickupLng: message.location.lng,
-        pickupAddress: message.location.address || "Ubicacion compartida por WhatsApp",
-      },
-      expiresAt: expiresAt(),
-    });
-
-    return buildResponse({
-      session: nextSession,
-      reply: `Recibido. Confirma tu taxi desde ${nextSession.context.pickupAddress}. Responde SI para confirmar.`,
-    });
-  }
-
-  if (session.state === STATES.WAITING_CONFIRMATION) {
-    if (!isConfirmation(text)) {
-      return buildResponse({
-        session,
-        reply: "Servicio pendiente de confirmacion. Responde SI para confirmar o Taxi para empezar de nuevo.",
-      });
-    }
-
-    const rideResult = await RideService.createRide({
-      clientId: client.id,
-      serviceType: session.context.serviceType || "standard",
-      pickupAddress: session.context.pickupAddress || "Ubicacion compartida por WhatsApp",
-      pickupLocation: {
-        lat: session.context.pickupLat,
-        lng: session.context.pickupLng,
-      },
-      requestDescription: session.context.dropoffAddress
-        ? `Destino WhatsApp: ${session.context.dropoffAddress}`
-        : null,
-      hasDestination: false,
-      source: "whatsapp",
-      actorType: "client",
-      actorId: client.id,
-      metadata: {
-        source: "whatsapp",
-        provider: "kapso",
-        phone,
-        dropoffAddressText: session.context.dropoffAddress || null,
-        rawMessage: message.raw,
-      },
-    });
-
-    const nextSession = await WhatsappSessionModel.resetSession({
-      phone,
-      userId: client.id,
-      expiresAt: expiresAt(),
-    });
-
-    logger.info("kapso_ride_created", {
-      rideId: rideResult.ride.id,
-      phone,
-      source: "whatsapp",
-    });
-
-    return buildResponse({
-      session: nextSession,
-      ride: rideResult.ride,
-      reply: `Servicio creado. Estamos buscando conductor. ID: ${rideResult.ride.id}`,
-    });
-  }
-
-  const nextSession = await WhatsappSessionModel.resetSession({
-    phone,
-    userId: client.id,
-    expiresAt: expiresAt(),
-  });
-
-  return buildResponse({
-    session: nextSession,
-    reply: "Reiniciamos la conversacion. Responde Taxi para pedir un servicio.",
+  return WhatsappBotService.handleMessage({
+    payload,
+    message,
   });
 }
 
 async function handleKapsoTestWebhook(payload) {
   const message = extractMessage(payload);
-  if (!message.phone) {
-    throw createHttpError(400, "Kapso test payload must include sender phone.");
+  return WhatsappBotService.handleTestMessage({
+    payload,
+    message,
+  });
+}
+
+function getKapsoPhoneNumberId(payload = {}) {
+  return (
+    payload.phone_number_id ||
+    payload.conversation?.phone_number_id ||
+    payload.message?.phone_number_id ||
+    payload.data?.phone_number_id ||
+    null
+  );
+}
+
+function getKapsoReplyRecipient(payload = {}) {
+  const message = extractMessage(payload);
+  return message.phone;
+}
+
+async function sendKapsoReply({ payload, result }) {
+  if (!result?.reply) {
+    return null;
   }
 
-  const phone = buildKapsoTestPhone(message.phone);
-  const nextSession = await WhatsappSessionModel.upsertSession({
-    phone,
-    userId: null,
-    state: STATES.START,
-    context: buildKapsoTestContext(payload, message),
-    expiresAt: expiresAt(),
-  });
+  const phoneNumberId = getKapsoPhoneNumberId(payload);
+  const to = getKapsoReplyRecipient(payload);
+  try {
+    const response = await KapsoClient.sendWhatsappText({
+      phoneNumberId,
+      to,
+      body: result.reply,
+    });
 
-  return buildResponse({
-    session: nextSession,
-    reply: "Kapso test payload received.",
-  });
+    return response;
+  } catch (error) {
+    logger.error("kapso_outbound_message_failed", {
+      phoneNumberId: phoneNumberId || null,
+      hasRecipient: Boolean(to),
+      error,
+    });
+    return {
+      skipped: true,
+      reason: "send_failed",
+    };
+  }
 }
 
 function getHeader(headers = {}, name) {
@@ -519,11 +343,16 @@ async function processKapsoWebhookRequest({ payload, headers = {} }) {
           const eventResult = isKapsoTestPayload(eventPayload)
             ? await handleKapsoTestWebhook(eventPayload)
             : await handleKapsoWebhook(eventPayload);
+          const outbound = await sendKapsoReply({
+            payload: eventPayload,
+            result: eventResult,
+          });
           processedCount += 1;
           results.push({
             ok: true,
             state: eventResult.state ?? null,
             rideId: eventResult.rideId ?? null,
+            outboundSkipped: outbound?.skipped ?? false,
           });
         } catch (error) {
           failedCount += 1;
@@ -560,6 +389,10 @@ async function processKapsoWebhookRequest({ payload, headers = {} }) {
       result = isKapsoTestPayload(payload)
         ? await handleKapsoTestWebhook(payload)
         : await handleKapsoWebhook(payload);
+      await sendKapsoReply({
+        payload,
+        result,
+      });
     }
     await WhatsappWebhookEventModel.markProcessed(idempotencyKey);
 
@@ -583,15 +416,18 @@ module.exports = {
   processKapsoWebhookRequest,
   __private: {
     extractMessage,
-    isTaxiIntent,
-    isConfirmation,
+    isTaxiIntent: WhatsappBotService.__private.isTaxiIntent,
+    isConfirmation: WhatsappBotService.__private.isConfirmation,
     verifyKapsoWebhook,
     isKapsoTestPayload,
-    buildKapsoTestPhone,
-    buildKapsoTestContext,
+    buildKapsoTestPhone: WhatsappBotService.__private.buildKapsoTestPhone,
+    buildKapsoTestContext: WhatsappBotService.__private.buildKapsoTestContext,
     summarizeKapsoPayload,
     extractKapsoBatchEvents,
+    getKapsoPhoneNumberId,
+    getKapsoReplyRecipient,
+    sendKapsoReply,
     KAPSO_MESSAGE_RECEIVED_EVENT,
-    STATES,
+    STATES: WhatsappBotService.__private.STATES,
   },
 };
