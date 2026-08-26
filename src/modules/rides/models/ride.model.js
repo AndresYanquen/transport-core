@@ -196,10 +196,9 @@ class RideModel {
           $19,
           $20,
           $21,
-          $22,
-          COALESCE($23::jsonb, '{}'::jsonb),
+          COALESCE($22::jsonb, '{}'::jsonb),
+          $23,
           $24,
-          $25
         )
         RETURNING ${BASE_RIDE_FIELDS}
       `,
