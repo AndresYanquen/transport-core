@@ -89,6 +89,25 @@ function isKapsoTestPayload(payload = {}) {
   return payload.test === true;
 }
 
+function buildKapsoTestPhone(phone) {
+  return phone ? `t${phone}` : null;
+}
+
+function buildKapsoTestContext(payload = {}, message = {}) {
+  return {
+    kapsoTest: true,
+    realPhone: message.phone || null,
+    kapsoConversationId: payload.conversation?.id || null,
+    kapsoUsername:
+      payload.conversation?.username ||
+      payload.message?.username ||
+      null,
+    kapsoContactName: payload.conversation?.contact_name || null,
+    kapsoMessageId: payload.message?.id || null,
+    lastText: message.text || null,
+  };
+}
+
 function verifyKapsoWebhook(payload, signature, secret) {
   if (!signature || !secret) {
     return false;
@@ -292,6 +311,27 @@ async function handleKapsoWebhook(payload) {
   });
 }
 
+async function handleKapsoTestWebhook(payload) {
+  const message = extractMessage(payload);
+  if (!message.phone) {
+    throw createHttpError(400, "Kapso test payload must include sender phone.");
+  }
+
+  const phone = buildKapsoTestPhone(message.phone);
+  const nextSession = await WhatsappSessionModel.upsertSession({
+    phone,
+    userId: null,
+    state: STATES.START,
+    context: buildKapsoTestContext(payload, message),
+    expiresAt: expiresAt(),
+  });
+
+  return buildResponse({
+    session: nextSession,
+    reply: "Kapso test payload received.",
+  });
+}
+
 function getHeader(headers = {}, name) {
   const normalizedName = name.toLowerCase();
   return headers[name] || headers[normalizedName] || null;
@@ -344,25 +384,9 @@ async function processKapsoWebhookRequest({ payload, headers = {} }) {
   }
 
   if (isKapsoTestPayload(payload)) {
-    const message = extractMessage(payload);
-    logger.info("kapso_message_received", {
-      eventType,
-      idempotencyKey: idempotencyKey || null,
-      payloadVersion: payloadVersion || null,
-      isBatch,
-      test: true,
-      hasPhone: Boolean(message.phone),
-      hasText: Boolean(message.text),
-    });
-
-    return {
-      statusCode: 200,
-      body: {
-        ok: true,
-        test: true,
-        ignored: true,
-      },
-    };
+    if (!idempotencyKey) {
+      throw createHttpError(400, "X-Idempotency-Key header is required.");
+    }
   }
 
   if (!idempotencyKey) {
@@ -394,9 +418,12 @@ async function processKapsoWebhookRequest({ payload, headers = {} }) {
       idempotencyKey,
       payloadVersion: payloadVersion || null,
       isBatch,
+      test: isKapsoTestPayload(payload),
     });
 
-    const result = await handleKapsoWebhook(payload);
+    const result = isKapsoTestPayload(payload)
+      ? await handleKapsoTestWebhook(payload)
+      : await handleKapsoWebhook(payload);
     await WhatsappWebhookEventModel.markProcessed(idempotencyKey);
 
     return {
@@ -423,6 +450,8 @@ module.exports = {
     isConfirmation,
     verifyKapsoWebhook,
     isKapsoTestPayload,
+    buildKapsoTestPhone,
+    buildKapsoTestContext,
     KAPSO_MESSAGE_RECEIVED_EVENT,
     STATES,
   },

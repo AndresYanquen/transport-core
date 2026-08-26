@@ -258,7 +258,7 @@ test("processKapsoWebhookRequest rejects missing signature headers", async (t) =
   assert.equal(calls.reserved.length, 0);
 });
 
-test("processKapsoWebhookRequest accepts Kapso test payloads without mutating state", async (t) => {
+test("processKapsoWebhookRequest stores Kapso test payloads with a test phone", async (t) => {
   const calls = installConversationStubs(t);
   const payload = {
     test: true,
@@ -287,11 +287,16 @@ test("processKapsoWebhookRequest accepts Kapso test payloads without mutating st
   });
 
   assert.equal(result.statusCode, 200);
-  assert.equal(result.body.ok, true);
-  assert.equal(result.body.test, true);
-  assert.equal(result.body.ignored, true);
-  assert.equal(calls.reserved.length, 0);
-  assert.equal(calls.sessions.length, 0);
+  assert.equal(result.body.state, "START");
+  assert.equal(calls.reserved.length, 1);
+  assert.deepEqual(calls.markedProcessed, ["kapso-test-key"]);
+  assert.equal(calls.sessions.length, 1);
+  assert.equal(calls.sessions[0].phone, "t+15551234567");
+  assert.equal(calls.sessions[0].userId, null);
+  assert.equal(calls.sessions[0].context.kapsoTest, true);
+  assert.equal(calls.sessions[0].context.realPhone, "+15551234567");
+  assert.equal(calls.sessions[0].context.kapsoConversationId, "test-conv");
+  assert.equal(calls.sessions[0].context.kapsoUsername, "kapso_test_user");
   assert.equal(calls.createdRides.length, 0);
 });
 
