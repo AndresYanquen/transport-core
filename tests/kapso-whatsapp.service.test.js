@@ -142,6 +142,25 @@ test("extractMessage accepts common Kapso-style text payloads", () => {
   assert.equal(message.text, "Taxi");
 });
 
+test("extractMessage accepts Kapso v2 conversation phone and text body", () => {
+  const message = extractMessage({
+    message: {
+      from: "+15551234567",
+      text: {
+        body: "This is a test message from Kapso webhook testing",
+      },
+      type: "text",
+    },
+    conversation: {
+      phone_number: "+15551234567",
+      contact_name: "kapso_test_user",
+    },
+  });
+
+  assert.equal(message.phone, "+15551234567");
+  assert.equal(message.text, "This is a test message from Kapso webhook testing");
+});
+
 test("extractMessage accepts nested location payloads", () => {
   const message = extractMessage({
     contact: {
@@ -237,6 +256,43 @@ test("processKapsoWebhookRequest rejects missing signature headers", async (t) =
   assert.equal(result.statusCode, 401);
   assert.equal(result.body.message, "Invalid signature");
   assert.equal(calls.reserved.length, 0);
+});
+
+test("processKapsoWebhookRequest accepts Kapso test payloads without mutating state", async (t) => {
+  const calls = installConversationStubs(t);
+  const payload = {
+    test: true,
+    message: {
+      id: "wamid.TEST",
+      from: "+15551234567",
+      text: {
+        body: "This is a test message from Kapso webhook testing",
+      },
+      type: "text",
+      username: "kapso_test_user",
+    },
+    conversation: {
+      id: "test-conv",
+      username: "kapso_test_user",
+      contact_name: "kapso_test_user",
+      phone_number: "+15551234567",
+    },
+  };
+
+  const result = await KapsoWhatsappService.processKapsoWebhookRequest({
+    payload,
+    headers: buildHeaders(payload, {
+      "x-idempotency-key": "kapso-test-key",
+    }),
+  });
+
+  assert.equal(result.statusCode, 200);
+  assert.equal(result.body.ok, true);
+  assert.equal(result.body.test, true);
+  assert.equal(result.body.ignored, true);
+  assert.equal(calls.reserved.length, 0);
+  assert.equal(calls.sessions.length, 0);
+  assert.equal(calls.createdRides.length, 0);
 });
 
 test("processKapsoWebhookRequest reserves and marks a new idempotency key", async (t) => {

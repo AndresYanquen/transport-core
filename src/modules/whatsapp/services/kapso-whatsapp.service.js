@@ -61,6 +61,7 @@ function extractLocation(payload = {}) {
 function extractMessage(payload = {}) {
   return {
     phone: pickFirstString(
+      payload.conversation?.phone_number,
       payload.phone,
       payload.from,
       payload.sender,
@@ -72,14 +73,20 @@ function extractMessage(payload = {}) {
     text: pickFirstString(
       payload.text,
       payload.body,
+      payload.message?.text?.body,
       payload.message?.text,
       payload.message?.body,
       payload.data?.text,
+      payload.data?.text?.body,
       payload.data?.body
     ),
     location: extractLocation(payload),
     raw: payload,
   };
+}
+
+function isKapsoTestPayload(payload = {}) {
+  return payload.test === true;
 }
 
 function verifyKapsoWebhook(payload, signature, secret) {
@@ -336,6 +343,28 @@ async function processKapsoWebhookRequest({ payload, headers = {} }) {
     };
   }
 
+  if (isKapsoTestPayload(payload)) {
+    const message = extractMessage(payload);
+    logger.info("kapso_message_received", {
+      eventType,
+      idempotencyKey: idempotencyKey || null,
+      payloadVersion: payloadVersion || null,
+      isBatch,
+      test: true,
+      hasPhone: Boolean(message.phone),
+      hasText: Boolean(message.text),
+    });
+
+    return {
+      statusCode: 200,
+      body: {
+        ok: true,
+        test: true,
+        ignored: true,
+      },
+    };
+  }
+
   if (!idempotencyKey) {
     throw createHttpError(400, "X-Idempotency-Key header is required.");
   }
@@ -393,6 +422,7 @@ module.exports = {
     isTaxiIntent,
     isConfirmation,
     verifyKapsoWebhook,
+    isKapsoTestPayload,
     KAPSO_MESSAGE_RECEIVED_EVENT,
     STATES,
   },
