@@ -350,6 +350,230 @@ test("processKapsoWebhookRequest stores Kapso test payloads with a test phone", 
   assert.equal(calls.createdRides.length, 0);
 });
 
+test("processKapsoWebhookRequest processes an individual Kapso v2 event", async (t) => {
+  const calls = installConversationStubs(t);
+  const payload = {
+    message: {
+      id: "wamid.REAL",
+      from: "+573001234567",
+      text: {
+        body: "Taxi",
+      },
+      type: "text",
+    },
+    conversation: {
+      id: "conv-real",
+      phone_number: "+573001234567",
+    },
+  };
+
+  const result = await KapsoWhatsappService.processKapsoWebhookRequest({
+    payload,
+    headers: buildHeaders(payload, {
+      "x-idempotency-key": "v2-single",
+    }),
+  });
+
+  assert.equal(result.statusCode, 200);
+  assert.equal(result.body.state, "WAITING_PICKUP");
+  assert.equal(calls.sessions.at(-1).phone, "+573001234567");
+  assert.equal(calls.sessions.at(-1).state, "WAITING_PICKUP");
+});
+
+test("processKapsoWebhookRequest processes a batch with one message", async (t) => {
+  const calls = installConversationStubs(t);
+  const payload = {
+    batch: true,
+    batch_info: {
+      size: 1,
+    },
+    type: "whatsapp.message.received",
+    data: [
+      {
+        message: {
+          id: "wamid.BATCH1",
+          from: "+573001234567",
+          text: {
+            body: "Taxi",
+          },
+          type: "text",
+        },
+        conversation: {
+          id: "conv-batch-1",
+          phone_number: "+573001234567",
+        },
+      },
+    ],
+  };
+
+  const result = await KapsoWhatsappService.processKapsoWebhookRequest({
+    payload,
+    headers: buildHeaders(payload, {
+      "x-idempotency-key": "batch-one",
+      "x-webhook-batch": "true",
+    }),
+  });
+
+  assert.equal(result.statusCode, 200);
+  assert.equal(result.body.batch, true);
+  assert.equal(result.body.batchSize, 1);
+  assert.equal(result.body.processedCount, 1);
+  assert.equal(result.body.failedCount, 0);
+  assert.equal(calls.sessions.at(-1).state, "WAITING_PICKUP");
+  assert.deepEqual(calls.markedProcessed, ["batch-one"]);
+});
+
+test("processKapsoWebhookRequest processes a batch with multiple messages", async (t) => {
+  const calls = installConversationStubs(t);
+  const payload = {
+    batch: true,
+    batch_info: {
+      size: 2,
+    },
+    type: "whatsapp.message.received",
+    data: [
+      {
+        message: {
+          id: "wamid.BATCH2A",
+          from: "+573001234567",
+          text: {
+            body: "Taxi",
+          },
+          type: "text",
+        },
+        conversation: {
+          id: "conv-batch-2",
+          phone_number: "+573001234567",
+        },
+      },
+      {
+        message: {
+          id: "wamid.BATCH2B",
+          from: "+573001234567",
+          location: {
+            latitude: 5.535,
+            longitude: -73.367,
+            address: "Centro",
+          },
+          type: "location",
+        },
+        conversation: {
+          id: "conv-batch-2",
+          phone_number: "+573001234567",
+        },
+      },
+    ],
+  };
+
+  const result = await KapsoWhatsappService.processKapsoWebhookRequest({
+    payload,
+    headers: buildHeaders(payload, {
+      "x-idempotency-key": "batch-many",
+      "x-webhook-batch": "true",
+    }),
+  });
+
+  assert.equal(result.statusCode, 200);
+  assert.equal(result.body.batchSize, 2);
+  assert.equal(result.body.processedCount, 2);
+  assert.equal(result.body.failedCount, 0);
+  assert.equal(calls.sessions.at(-1).state, "WAITING_CONFIRMATION");
+  assert.equal(calls.sessions.at(-1).context.pickupLat, 5.535);
+  assert.equal(calls.sessions.at(-1).context.pickupLng, -73.367);
+});
+
+test("processKapsoWebhookRequest skips duplicate batch delivery idempotency keys", async (t) => {
+  const calls = installConversationStubs(t, { duplicate: true });
+  const payload = {
+    batch: true,
+    data: [
+      {
+        message: {
+          from: "+573001234567",
+          text: {
+            body: "Taxi",
+          },
+        },
+        conversation: {
+          phone_number: "+573001234567",
+        },
+      },
+    ],
+  };
+
+  const result = await KapsoWhatsappService.processKapsoWebhookRequest({
+    payload,
+    headers: buildHeaders(payload, {
+      "x-idempotency-key": "duplicate-batch",
+      "x-webhook-batch": "true",
+    }),
+  });
+
+  assert.equal(result.statusCode, 200);
+  assert.equal(result.body.duplicate, true);
+  assert.equal(calls.sessions.length, 0);
+});
+
+test("processKapsoWebhookRequest rejects malformed batch payloads", async (t) => {
+  const calls = installConversationStubs(t);
+  const payload = {
+    batch: true,
+    batch_info: {
+      size: 1,
+    },
+    data: {
+      message: {
+        from: "+573001234567",
+      },
+    },
+  };
+
+  await assert.rejects(
+    () =>
+      KapsoWhatsappService.processKapsoWebhookRequest({
+        payload,
+        headers: buildHeaders(payload, {
+          "x-idempotency-key": "bad-batch",
+          "x-webhook-batch": "true",
+        }),
+      }),
+    (error) =>
+      error.status === 400 &&
+      /batch payload data must be an array/.test(error.message)
+  );
+  assert.equal(calls.reserved.length, 0);
+  assert.equal(calls.sessions.length, 0);
+});
+
+test("processKapsoWebhookRequest rejects invalid batch signatures", async (t) => {
+  const calls = installConversationStubs(t);
+  const payload = {
+    batch: true,
+    data: [
+      {
+        message: {
+          from: "+573001234567",
+          text: {
+            body: "Taxi",
+          },
+        },
+      },
+    ],
+  };
+
+  const result = await KapsoWhatsappService.processKapsoWebhookRequest({
+    payload,
+    headers: buildHeaders(payload, {
+      "x-webhook-batch": "true",
+      "x-webhook-signature": signPayload({ different: true }),
+    }),
+  });
+
+  assert.equal(result.statusCode, 401);
+  assert.equal(calls.reserved.length, 0);
+  assert.equal(calls.sessions.length, 0);
+});
+
 test("processKapsoWebhookRequest reserves and marks a new idempotency key", async (t) => {
   const calls = installConversationStubs(t);
   const payload = { from: "+573001234567", body: "Taxi" };

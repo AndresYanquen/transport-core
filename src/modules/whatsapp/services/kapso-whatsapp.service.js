@@ -139,6 +139,22 @@ function summarizeKapsoPayload(payload = {}) {
   };
 }
 
+function extractKapsoBatchEvents(payload = {}) {
+  if (Array.isArray(payload.data)) {
+    return payload.data;
+  }
+
+  if (Array.isArray(payload.data?.events)) {
+    return payload.data.events;
+  }
+
+  if (Array.isArray(payload.data?.messages)) {
+    return payload.data.messages;
+  }
+
+  return null;
+}
+
 function buildKapsoTestPhone(phone) {
   return phone ? `t${phone}` : null;
 }
@@ -393,6 +409,7 @@ async function processKapsoWebhookRequest({ payload, headers = {} }) {
   const idempotencyKey = getHeader(headers, "x-idempotency-key");
   const payloadVersion = getHeader(headers, "x-webhook-payload-version");
   const isBatch = String(getHeader(headers, "x-webhook-batch") || "").toLowerCase() === "true";
+  const batchEvents = isBatch ? extractKapsoBatchEvents(payload) : null;
 
   logger.info("kapso_webhook_received", {
     eventType,
@@ -408,6 +425,15 @@ async function processKapsoWebhookRequest({ payload, headers = {} }) {
     isBatch,
     payload: summarizeKapsoPayload(payload),
   });
+  if (isBatch) {
+    logger.info("kapso_batch_received", {
+      eventType,
+      idempotencyKey: idempotencyKey || null,
+      payloadVersion: payloadVersion || null,
+      batchSize: Array.isArray(batchEvents) ? batchEvents.length : null,
+      malformed: !Array.isArray(batchEvents),
+    });
+  }
 
   if (eventType !== KAPSO_MESSAGE_RECEIVED_EVENT) {
     return {
@@ -450,6 +476,10 @@ async function processKapsoWebhookRequest({ payload, headers = {} }) {
     throw createHttpError(400, "X-Idempotency-Key header is required.");
   }
 
+  if (isBatch && !Array.isArray(batchEvents)) {
+    throw createHttpError(400, "Kapso batch payload data must be an array.");
+  }
+
   const reservation = await WhatsappWebhookEventModel.reserveIdempotencyKey({
     idempotencyKey,
     eventType,
@@ -478,9 +508,59 @@ async function processKapsoWebhookRequest({ payload, headers = {} }) {
       test: isKapsoTestPayload(payload),
     });
 
-    const result = isKapsoTestPayload(payload)
-      ? await handleKapsoTestWebhook(payload)
-      : await handleKapsoWebhook(payload);
+    let result;
+    if (isBatch) {
+      const results = [];
+      let processedCount = 0;
+      let failedCount = 0;
+
+      for (const eventPayload of batchEvents) {
+        try {
+          const eventResult = isKapsoTestPayload(eventPayload)
+            ? await handleKapsoTestWebhook(eventPayload)
+            : await handleKapsoWebhook(eventPayload);
+          processedCount += 1;
+          results.push({
+            ok: true,
+            state: eventResult.state ?? null,
+            rideId: eventResult.rideId ?? null,
+          });
+        } catch (error) {
+          failedCount += 1;
+          results.push({
+            ok: false,
+            message: error.message,
+          });
+        }
+      }
+
+      logger.info("kapso_batch_processed", {
+        eventType,
+        idempotencyKey,
+        batchSize: batchEvents.length,
+        processedCount,
+        failedCount,
+      });
+
+      if (failedCount > 0) {
+        throw createHttpError(
+          400,
+          `Kapso batch processing failed for ${failedCount} event(s).`
+        );
+      }
+
+      result = {
+        batch: true,
+        batchSize: batchEvents.length,
+        processedCount,
+        failedCount,
+        results,
+      };
+    } else {
+      result = isKapsoTestPayload(payload)
+        ? await handleKapsoTestWebhook(payload)
+        : await handleKapsoWebhook(payload);
+    }
     await WhatsappWebhookEventModel.markProcessed(idempotencyKey);
 
     return {
@@ -510,6 +590,7 @@ module.exports = {
     buildKapsoTestPhone,
     buildKapsoTestContext,
     summarizeKapsoPayload,
+    extractKapsoBatchEvents,
     KAPSO_MESSAGE_RECEIVED_EVENT,
     STATES,
   },
