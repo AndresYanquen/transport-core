@@ -31,6 +31,22 @@ const routes = [
     },
   },
   {
+    path: "/reset-password",
+    name: "reset-password",
+    component: () => import("../modules/public/views/ResetPasswordView.vue"),
+    meta: {
+      layout: "desktop",
+    },
+  },
+  {
+    path: "/verify-email",
+    name: "verify-email",
+    component: () => import("../modules/public/views/VerifyEmailView.vue"),
+    meta: {
+      layout: "desktop",
+    },
+  },
+  {
     path: "/track/:token",
     name: "public-ride-tracking",
     component: () => import("../modules/public/views/PublicRideTrackingView.vue"),
