@@ -156,6 +156,25 @@ const env = {
       2592000
     ),
     refreshTokenBytes: parseNumber(process.env.REFRESH_TOKEN_BYTES, 64),
+    passwordResetTtlSeconds: parseNumber(
+      process.env.PASSWORD_RESET_TTL_SECONDS,
+      30 * 60
+    ),
+    emailVerificationTtlSeconds: parseNumber(
+      process.env.EMAIL_VERIFICATION_TTL_SECONDS,
+      24 * 60 * 60
+    ),
+  },
+  app: {
+    publicUrl: String(process.env.APP_PUBLIC_URL || "http://localhost:5173").replace(/\/+$/, ""),
+  },
+  mail: {
+    host: process.env.MAIL_HOST || "",
+    port: parseNumber(process.env.MAIL_PORT, 587),
+    secure: parseBoolean(process.env.MAIL_SECURE, false),
+    user: process.env.MAIL_USER || "",
+    password: process.env.MAIL_PASSWORD || "",
+    from: process.env.MAIL_FROM || "GotTaxi <no-reply@gottaxi.local>",
   },
   realtime: {
     enabled: parseBoolean(process.env.SOCKET_ENABLED, true),

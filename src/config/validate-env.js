@@ -19,6 +19,11 @@ function validateProductionEnv() {
   }
   if (!process.env.CORS_ALLOWED_ORIGINS) missing.push("CORS_ALLOWED_ORIGINS");
   if (!process.env.GOOGLE_CLIENT_ID) missing.push("GOOGLE_CLIENT_ID");
+  if (!process.env.APP_PUBLIC_URL) missing.push("APP_PUBLIC_URL");
+  if (!process.env.MAIL_HOST) missing.push("MAIL_HOST");
+  if (!process.env.MAIL_USER) missing.push("MAIL_USER");
+  if (!process.env.MAIL_PASSWORD) missing.push("MAIL_PASSWORD");
+  if (!process.env.MAIL_FROM) missing.push("MAIL_FROM");
 
   if (env.cors.allowedOrigins.includes("*")) {
     missing.push("CORS_ALLOWED_ORIGINS must not be * in production");

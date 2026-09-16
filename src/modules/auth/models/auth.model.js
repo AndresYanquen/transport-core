@@ -558,6 +558,40 @@ class AuthModel {
     return this.findById(rows[0].id);
   }
 
+  static async findByEmailVerificationToken(tokenHash) {
+    const { rows } = await query(
+      `
+        ${baseUserSelect}
+        WHERE u.email_verification_token = $1
+          AND u.deleted_at IS NULL
+      `,
+      [tokenHash]
+    );
+
+    return rows[0] ?? null;
+  }
+
+  static async updatePassword(userId, passwordHash) {
+    const { rows } = await query(
+      `
+        UPDATE users
+        SET
+          password_hash = $2,
+          updated_at = NOW()
+        WHERE id = $1
+          AND deleted_at IS NULL
+        RETURNING id
+      `,
+      [userId, passwordHash]
+    );
+
+    if (!rows[0]) {
+      return null;
+    }
+
+    return this.findById(rows[0].id);
+  }
+
   static async markEmailVerified(userId) {
     const { rows } = await query(
       `

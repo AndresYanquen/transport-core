@@ -1,7 +1,7 @@
 const PreferencesModel = require("../models/preferences.model");
 
 const DEFAULT_PREFERENCES = {
-  theme: "system",
+  theme: "dark",
   language: "en",
 };
 

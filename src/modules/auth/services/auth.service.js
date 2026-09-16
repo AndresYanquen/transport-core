@@ -9,9 +9,12 @@ const { normalizePhoneNumber } = require("../utils/phone");
 const GoogleAuthService = require("./google-auth.service");
 const RefreshTokenService = require("./refresh-token.service");
 const SettingsService = require("../../settings/services/settings.service");
+const PasswordResetTokenModel = require("../models/password-reset-token.model");
+const EmailService = require("../../email/services/email.service");
 
 const PASSWORD_SALT_ROUNDS = 12;
 const VERIFICATION_TOKEN_BYTES = 32;
+const PASSWORD_RESET_TOKEN_BYTES = 32;
 
 const allowedAccountTypes = ["client", "driver"];
 
@@ -68,6 +71,21 @@ function generateToken(bytes = 32) {
 
 function hashToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function buildFrontendUrl(path, token) {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const url = new URL(normalizedPath, `${env.app.publicUrl}/`);
+  url.searchParams.set("token", token);
+  return url.toString();
+}
+
+function buildExpiresAt(ttlSeconds) {
+  return new Date(Date.now() + ttlSeconds * 1000);
+}
+
+function isExpired(dateValue) {
+  return new Date(dateValue).getTime() <= Date.now();
 }
 
 function splitDisplayName(name) {
@@ -280,10 +298,17 @@ async function registerUser({
 
   const user = AuthModel.toPublicUser(userRow);
 
+  if (user.email) {
+    await EmailService.sendEmailVerificationEmail({
+      to: user.email,
+      verificationUrl: buildFrontendUrl("/verify-email", emailVerificationToken),
+    });
+  }
+
   return {
     user,
     verification: {
-      emailToken: emailVerificationToken,
+      emailSent: Boolean(user.email),
       phoneToken: phoneVerificationToken,
     },
   };
@@ -407,6 +432,78 @@ async function logoutAll(authenticatedUser) {
   return { success: true };
 }
 
+async function requestPasswordReset({ email }) {
+  const userRow = await AuthModel.findByEmail(email);
+
+  if (userRow?.email && userRow.password_hash) {
+    await PasswordResetTokenModel.revokeUnusedForUser(userRow.id);
+
+    const resetToken = generateToken(PASSWORD_RESET_TOKEN_BYTES);
+    await PasswordResetTokenModel.create({
+      userId: userRow.id,
+      tokenHash: hashToken(resetToken),
+      expiresAt: buildExpiresAt(env.security.passwordResetTtlSeconds),
+    });
+
+    await EmailService.sendPasswordResetEmail({
+      to: userRow.email,
+      resetUrl: buildFrontendUrl("/reset-password", resetToken),
+    });
+  }
+
+  return {
+    message:
+      "Si el correo existe, enviaremos instrucciones para restablecer la contraseña.",
+  };
+}
+
+async function resetPassword({ token, password }) {
+  const tokenHash = hashToken(token);
+  const tokenRow = await PasswordResetTokenModel.findByHash(tokenHash);
+
+  if (!tokenRow || tokenRow.used_at || isExpired(tokenRow.expires_at)) {
+    const error = new Error("El enlace de recuperación es inválido o expiró.");
+    error.status = 400;
+    throw error;
+  }
+
+  const userRow = await AuthModel.findById(tokenRow.user_id);
+  if (!userRow) {
+    const error = new Error("El enlace de recuperación es inválido o expiró.");
+    error.status = 400;
+    throw error;
+  }
+
+  const passwordHash = await bcrypt.hash(password, PASSWORD_SALT_ROUNDS);
+  await AuthModel.updatePassword(userRow.id, passwordHash);
+  await PasswordResetTokenModel.markUsed(tokenHash);
+  await RefreshTokenService.revokeAllForUser(userRow.id, "password_reset");
+
+  return { success: true };
+}
+
+async function verifyEmail({ token }) {
+  const userRow = await AuthModel.findByEmailVerificationToken(hashToken(token));
+
+  if (
+    !userRow ||
+    !userRow.email_verification_sent_at ||
+    isExpired(
+      new Date(
+        new Date(userRow.email_verification_sent_at).getTime() +
+          env.security.emailVerificationTtlSeconds * 1000
+      )
+    )
+  ) {
+    const error = new Error("El enlace de verificación es inválido o expiró.");
+    error.status = 400;
+    throw error;
+  }
+
+  const verifiedUser = await AuthModel.markEmailVerified(userRow.id);
+  return { user: AuthModel.toPublicUser(verifiedUser) };
+}
+
 async function getCurrentUser(authenticatedUser) {
   if (!authenticatedUser || !authenticatedUser.id) {
     const error = new Error("Unauthorized");
@@ -426,7 +523,11 @@ module.exports = {
   refreshSession,
   logoutUser,
   logoutAll,
+  requestPasswordReset,
+  resetPassword,
+  verifyEmail,
   getCurrentUser,
   buildLoginSession,
   signAccessToken,
+  hashToken,
 };

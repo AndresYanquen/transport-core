@@ -47,6 +47,15 @@ Copy `.env.example` to `.env` for local development. In production, `JWT_SECRET`
 | `JWT_SECRET` | `change-me-in-production` | JWT signing secret. Required in production and must not use the development fallback. |
 | `JWT_ACCESS_TTL_SECONDS` | `3600` | Access token lifetime in seconds. |
 | `JWT_REMEMBER_ME_TTL_SECONDS` | `2592000` | Longer token lifetime for remember-me sessions. |
+| `PASSWORD_RESET_TTL_SECONDS` | `1800` | Password reset link lifetime in seconds. |
+| `EMAIL_VERIFICATION_TTL_SECONDS` | `86400` | Email verification link lifetime in seconds. |
+| `APP_PUBLIC_URL` | `https://app.gottaxi.co` | Public frontend URL used to build email links. |
+| `MAIL_HOST` | `smtp.hostinger.com` | SMTP host for transactional email. |
+| `MAIL_PORT` | `465` | SMTP port. Hostinger uses 465 with SSL/TLS. |
+| `MAIL_SECURE` | `true` | Enables SMTP SSL/TLS. Use `false` for STARTTLS on port 587. |
+| `MAIL_USER` | `contacto@gottaxi.co` | SMTP mailbox user. |
+| `MAIL_PASSWORD` | `change-me` | SMTP mailbox password. Required in production. |
+| `MAIL_FROM` | `GotTaxi <contacto@gottaxi.co>` | Sender used for auth emails. |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:3001,http://localhost:5173` | Comma-separated browser origins allowed to call the API. Required in production. Do not use `*` in production. |
 | `CORS_ALLOW_LOCALHOST_TEMP` | `false` | Temporarily allows localhost origins in production when set to a truthy value. Keep disabled for normal production. |
 | `LOG_LEVEL` | `info` | Minimum log level. Supported values: `debug`, `info`, `warn`, `error`, `silent`. |
@@ -140,12 +149,15 @@ Responsibility: Express bootstrap, shared middleware, CORS, route mounting, data
 
 ### Auth Module
 
-Responsibility: account registration, login, JWT issuance, password hashing, and current-user profile lookup.
+Responsibility: account registration, login, JWT issuance, password hashing, email verification, password recovery, and current-user profile lookup.
 
 | Method | Endpoint | Auth | Responsibility |
 | --- | --- | --- | --- |
 | `POST` | `/api/auth/signup` | Public | Creates a client or driver account and related profile row. |
 | `POST` | `/api/auth/login` | Public | Validates credentials, updates login metadata, and returns a JWT. |
+| `POST` | `/api/auth/forgot-password` | Public | Sends a password reset link when the email belongs to an account. Always returns a generic success message. |
+| `POST` | `/api/auth/reset-password` | Public | Uses a password reset token to set a new password and revoke active refresh tokens. |
+| `POST` | `/api/auth/verify-email` | Public | Verifies an account email with the token sent after signup. |
 | `GET` | `/api/auth/me` | Authenticated | Returns the authenticated user's public profile. |
 
 ### Rides Module

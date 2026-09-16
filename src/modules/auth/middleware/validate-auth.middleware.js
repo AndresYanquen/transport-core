@@ -130,10 +130,61 @@ function validateRefreshToken(req, res, next) {
   next();
 }
 
+function validateForgotPassword(req, res, next) {
+  const { email } = req.body || {};
+
+  if (!email) {
+    return res.status(400).json({ message: "Email is required." });
+  }
+
+  if (typeof email !== "string" || !email.includes("@")) {
+    return res.status(400).json({ message: "Email must be valid." });
+  }
+
+  next();
+}
+
+function validateResetPassword(req, res, next) {
+  const { token, password } = req.body || {};
+
+  if (!token || !password) {
+    return res.status(400).json({ message: "Token and password are required." });
+  }
+
+  if (typeof token !== "string" || typeof password !== "string") {
+    return res.status(400).json({ message: "Token and password must be strings." });
+  }
+
+  if (password.length < 6) {
+    return res
+      .status(400)
+      .json({ message: "Password must be at least 6 characters long." });
+  }
+
+  next();
+}
+
+function validateVerifyEmail(req, res, next) {
+  const { token } = req.body || {};
+
+  if (!token) {
+    return res.status(400).json({ message: "Token is required." });
+  }
+
+  if (typeof token !== "string") {
+    return res.status(400).json({ message: "Token must be a string." });
+  }
+
+  next();
+}
+
 module.exports = {
   signup: validateSignup,
   login: validateLogin,
   google: validateGoogleLogin,
   refresh: validateRefreshToken,
   logout: validateRefreshToken,
+  forgotPassword: validateForgotPassword,
+  resetPassword: validateResetPassword,
+  verifyEmail: validateVerifyEmail,
 };

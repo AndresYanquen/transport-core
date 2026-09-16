@@ -30,7 +30,7 @@ function runMiddleware(body) {
 
 test("preferences defaults include theme and language", () => {
   assert.deepEqual(withDefaults({ wheelchairAccessible: false }), {
-    theme: "system",
+    theme: "dark",
     language: "en",
     wheelchairAccessible: false,
   });
@@ -38,7 +38,7 @@ test("preferences defaults include theme and language", () => {
 
 test("preferences defaults work when user profile has no preferences", () => {
   assert.deepEqual(withDefaults({}), {
-    theme: "system",
+    theme: "dark",
     language: "en",
   });
 });

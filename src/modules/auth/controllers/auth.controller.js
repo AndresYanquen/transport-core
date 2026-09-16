@@ -61,6 +61,33 @@ async function logoutAll(req, res, next) {
   }
 }
 
+async function forgotPassword(req, res, next) {
+  try {
+    const result = await AuthService.requestPasswordReset(req.body);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function resetPassword(req, res, next) {
+  try {
+    const result = await AuthService.resetPassword(req.body);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function verifyEmail(req, res, next) {
+  try {
+    const result = await AuthService.verifyEmail(req.body);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function me(req, res, next) {
   try {
     const result = await AuthService.getCurrentUser(req.user);
@@ -77,5 +104,8 @@ module.exports = {
   refresh,
   logout,
   logoutAll,
+  forgotPassword,
+  resetPassword,
+  verifyEmail,
   me,
 };
