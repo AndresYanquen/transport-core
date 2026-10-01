@@ -159,7 +159,20 @@ async function updateStatus(driverId, status, dbClient) {
     `
       UPDATE drivers d
       SET status = CASE
-            WHEN d.status = 'busy' AND $1 <> 'busy' THEN 'busy'
+            WHEN d.status = 'busy'
+              AND $1 <> 'busy'
+              AND EXISTS (
+                SELECT 1
+                FROM rides r
+                WHERE r.driver_id = d.user_id
+                  AND r.status IN (
+                    'driver_assigned',
+                    'driver_en_route',
+                    'driver_arrived',
+                    'in_progress'
+                  )
+              )
+              THEN 'busy'
             ELSE $1
           END,
           availability_intent = CASE
