@@ -29,7 +29,7 @@ const navigation = useOperatorNavigationStore();
 const driverNotifications = useDriverNotificationsStore();
 const menuFavorites = useMenuFavoritesStore();
 const sidebarOpen = ref(false);
-const sidebarCollapsed = ref(false);
+const sidebarCollapsed = ref(true);
 const openMenuCode = ref("");
 
 const iconMap = {

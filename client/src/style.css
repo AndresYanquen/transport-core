@@ -523,6 +523,13 @@ video {
   max-width: 100%;
 }
 
+.leaflet-container svg,
+.leaflet-container canvas,
+.leaflet-container img {
+  max-width: none;
+  max-height: none;
+}
+
 main,
 section,
 article,

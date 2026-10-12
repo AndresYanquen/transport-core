@@ -15,6 +15,7 @@ function mapZone(row) {
     type: row.type,
     status: row.status,
     color: row.color,
+    geometry,
     coordinates: ring,
     metadata: row.metadata || {},
     createdAt: row.created_at,

@@ -167,6 +167,7 @@ async function getSnapshot(filters = {}) {
       type: row.type,
       status: row.status,
       color: row.color,
+      geometry: row.geometry_geojson || null,
       coordinates: row.geometry_geojson?.coordinates?.[0] || [],
       metrics: {
         requests,

@@ -6,7 +6,7 @@ const AdminZonesMiddleware = require("../middleware/admin-zones.middleware");
 
 const router = Router();
 
-router.get("/", authorizeRoles("admin"), AdminZonesController.listZones);
+router.get("/", authorizeRoles("admin", "operator"), AdminZonesController.listZones);
 
 router.post(
   "/",
