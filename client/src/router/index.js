@@ -513,6 +513,12 @@ const routes = [
     redirect: { name: "admin-operational-parameters" },
   },
   {
+    path: "/admin/configuracion/general",
+    name: "admin-general-settings",
+    component: () => import("../modules/admin/views/AdminGeneralSettingsView.vue"),
+    meta: { layout: "desktop", adminShell: true, requiresAuth: true, requiresAdmin: true },
+  },
+  {
     path: "/admin/configuracion/operational-parameters",
     name: "admin-operational-parameters",
     component: () => import("../modules/admin/views/AdminOperationalParametersView.vue"),

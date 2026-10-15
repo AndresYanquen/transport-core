@@ -15,8 +15,10 @@ import { apiRequest } from "../../../services/api.js";
 import { createRealtimeSocket } from "../../../services/realtime.js";
 import { useAuthStore } from "../../../stores/auth.js";
 import { driverPresenceLabel, isDriverStale } from "../../../lib/driverPresence.js";
+import OperatorRadioRequestsView from "./OperatorRadioRequestsView.vue";
 import { useOperationalSettings } from "../../../stores/operationalSettings.js";
 
+const radioModal = ref(null);
 const auth = useAuthStore();
 const operationalSettings = useOperationalSettings();
 const mapEl = ref(null);
@@ -410,12 +412,17 @@ async function fetchRadioRequests({ quiet = false } = {}) {
 }
 
 async function acceptRadioRequest(request) {
-  if (!request?.id) return;
+  if (!request?.id || state.radioActionId) return;
+  if (radioModal.value?.isOpen) {
+    state.radioError = "Finaliza o cierra la sesión de radio actual antes de aceptar otra solicitud.";
+    return;
+  }
   state.radioActionId = request.id;
   state.radioError = "";
   state.radioSuccess = "";
   try {
-    await apiRequest(`/api/radio/requests/${request.id}/accept`, { method: "POST" });
+    const result = await apiRequest(`/api/radio/requests/${request.id}/accept`, { method: "POST" });
+    await radioModal.value.openRadioModal({ request, session: result?.session || null });
     state.radioSuccess = `Solicitud aceptada para ${radioDriverName(request)}.`;
     await fetchRadioRequests({ quiet: true });
   } catch (error) {
@@ -1128,5 +1135,6 @@ onBeforeUnmount(() => {
         </form>
       </div>
     </Teleport>
+    <OperatorRadioRequestsView ref="radioModal" modal-only />
   </section>
 </template>

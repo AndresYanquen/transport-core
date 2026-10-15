@@ -19,6 +19,7 @@ import { apiRequest } from "../../../services/api.js";
 import { createRealtimeSocket } from "../../../services/realtime.js";
 import { useAuthStore } from "../../../stores/auth.js";
 
+const props = defineProps({ modalOnly: { type: Boolean, default: false } });
 const auth = useAuthStore();
 const roomRef = shallowRef(null);
 const remoteAudioElements = new Map();
@@ -283,6 +284,7 @@ function bindRoomEvents(room, RoomEvent) {
 }
 
 async function fetchRequests({ quiet = false } = {}) {
+  if (props.modalOnly) return;
   if (!quiet) state.loading = true;
   state.error = "";
 
@@ -442,13 +444,17 @@ async function disconnectLiveKit({ silent = false } = {}) {
 }
 
 async function acceptRequest(request) {
-  if (!request?.id || !isOperator.value) return;
+  if (!request?.id || !isOperator.value || state.actionId) return;
+  if (radio.open) {
+    state.error = "Finaliza o cierra la sesión de radio actual antes de aceptar otra solicitud.";
+    return;
+  }
   state.actionId = request.id;
   state.error = "";
 
   try {
     const result = await apiRequest(`/api/radio/requests/${request.id}/accept`, { method: "POST" });
-    openRadioModal({ request, session: result?.session || null });
+    await openRadioModal({ request, session: result?.session || null });
     showSuccess(`Sesión de radio creada para ${driverName(request)}.`);
     await fetchRequests({ quiet: true });
   } catch (error) {
@@ -478,6 +484,7 @@ async function rejectRequest(request) {
 }
 
 async function openRadioModal({ request, session }) {
+  if (radio.open) throw new Error("Finaliza o cierra la sesión de radio actual antes de abrir otra.");
   resetRadioState();
   radio.open = true;
   radio.request = request;
@@ -556,8 +563,12 @@ function connectRealtime() {
   socket.on("radio:talk:denied", handleTalkDenied);
   socket.on("radio:talk:stopped", handleTalkStopped);
   socket.on("radio:talk:changed", handleTalkChanged);
-  socket.on("radio:ended", () => closeRadioModal());
+  socket.on("radio:ended", (payload = {}) => {
+    if (payload.session?.id === radio.session?.id) closeRadioModal();
+  });
 }
+
+defineExpose({ openRadioModal, isOpen: computed(() => radio.open) });
 
 onMounted(() => {
   fetchRequests();
@@ -574,7 +585,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="grid gap-4 p-4">
+  <section :class="props.modalOnly ? '' : 'grid gap-4 p-4'">
+    <template v-if="!props.modalOnly">
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div>
         <p class="text-sm font-medium uppercase tracking-[0.16em] text-slate-500">Radio</p>
@@ -705,6 +717,9 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
+    </template>
+
+    <Teleport to="body">
     <div v-if="radio.open" class="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4">
       <section class="max-h-[92vh] w-full max-w-3xl overflow-hidden rounded-lg bg-white shadow-2xl">
         <header class="flex items-start justify-between gap-4 border-b border-slate-200 p-4">
@@ -849,5 +864,6 @@ onBeforeUnmount(() => {
         </div>
       </section>
     </div>
+    </Teleport>
   </section>
 </template>

@@ -33,6 +33,8 @@ const driverNotificationRoutes = require("./modules/driver-notifications/routes/
 const whatsappWebhookRoutes = require("./modules/whatsapp/routes/kapso-whatsapp.routes");
 const { authenticate } = require("./modules/auth/middleware/authentication.middleware");
 
+const homeContentRoutes = require("./modules/home-content/home-content.routes");
+
 const app = express();
 
 app.disable("x-powered-by");
@@ -57,6 +59,8 @@ app.use("/api/preferred-drivers", authenticate, preferredDriverRoutes);
 app.use("/api/users", authenticate, userRoutes);
 app.use("/api/service-types", authenticate, serviceTypeRoutes);
 app.use("/api/settings", authenticate, settingsRoutes);
+app.use("/api/admin/home-content", authenticate, homeContentRoutes.admin);
+app.use("/api/home-content", authenticate, homeContentRoutes.mobile);
 app.use("/api/radio", authenticate, radioRoutes);
 app.use("/api/driver-notifications", authenticate, driverNotificationRoutes);
 app.use("/api/admin/navigation", authenticate, adminNavigationRoutes);
