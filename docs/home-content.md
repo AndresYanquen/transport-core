@@ -79,3 +79,11 @@ Consultar al cargar o retomar el inicio. Ocultar secciones vacías y tolerar fal
 - `npm run build --prefix client`
 
 Las pruebas del módulo usan dobles de PostgreSQL y R2: no suben imágenes ni modifican bases remotas. Antes de producción, verificar en staging migración, carga real a R2, URL pública, permisos, publicación, vencimiento y consumo desde Flutter.
+
+## Iconos de tipos de servicio en el inicio Flutter
+
+El catálogo existente `GET /api/service-types` (Bearer token) devuelve `{ serviceTypes: [...] }`. Cada tipo incluye `code`, `name`, `icon`, `color`, `isActive` y `sortOrder`; para pasajeros el servidor entrega únicamente los activos, ordenados por `sort_order` y nombre.
+
+Las tarjetas o accesos de tipos de servicio del inicio deben usar el mismo resolvedor de iconos que el selector de servicios, basado en `serviceType.icon`, y el color `serviceType.color` si es válido. No duplicar una tabla de iconos basada en el nombre comercial ni asignar a todos un icono fijo. `icon` actualmente es un identificador (por ejemplo `car`, `gem`, `bus`, `users`, `package`, `utensils`, `wrench`, `battery-charging`, `disc`), no una URL de imagen de R2. Si falta o es desconocido, mostrar el icono de vehículo predeterminado; si falta el color, usar el tema de la app.
+
+Mantener la navegación actual enviando `serviceType.code` al flujo de solicitud. Actualizar el catálogo junto con el inicio para reflejar cambios de administración. Esta información procede del catálogo de servicios, no de `/api/home-content`; las dos peticiones pueden ejecutarse independientemente. No asignar automáticamente un icono de servicio a los banners de Promociones o Seguridad.

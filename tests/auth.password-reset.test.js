@@ -110,68 +110,19 @@ test("password reset request stores hashed token and sends email", async () => {
   }
 });
 
-test("reset password updates password, consumes token, and revokes sessions", async () => {
-  const originalFindByHash = PasswordResetTokenModel.findByHash;
-  const originalFindById = AuthModel.findById;
-  const originalUpdatePassword = AuthModel.updatePassword;
-  const originalMarkUsed = PasswordResetTokenModel.markUsed;
-  const originalRevokeAllForUser = RefreshTokenService.revokeAllForUser;
-  const plainToken = "plain-reset-token";
-  const tokenHash = AuthService.hashToken(plainToken);
-  const calls = {};
-
-  PasswordResetTokenModel.findByHash = async (hash) => {
-    calls.lookupHash = hash;
-    return {
-      user_id: "user-1",
-      token_hash: hash,
-      expires_at: new Date(Date.now() + 60000),
-      used_at: null,
-    };
-  };
-  AuthModel.findById = async () => ({
-    id: "user-1",
-    email: "user@example.com",
-    status: "active",
+test("reset password delegates consumption, password update and session revocation atomically", async (t) => {
+  const token = "plain-reset-token";
+  const hash = AuthService.hashToken(token);
+  t.mock.method(PasswordResetTokenModel, "findByHash", async () => ({ user_id: "user-1", token_hash: hash,
+    expires_at: new Date(Date.now() + 60000), used_at: null }));
+  t.mock.method(AuthModel, "findById", async () => ({ id: "user-1", status: "active" }));
+  const consume = t.mock.method(PasswordResetTokenModel, "consumeAndResetPassword", async (input) => {
+    assert.equal(input.tokenHash, hash);
+    assert.equal(await bcrypt.compare("NewPassword123!", input.passwordHash), true);
+    return true;
   });
-  AuthModel.updatePassword = async (userId, passwordHash) => {
-    calls.updatedPassword = { userId, passwordHash };
-    return { id: userId };
-  };
-  PasswordResetTokenModel.markUsed = async (hash) => {
-    calls.markedUsed = hash;
-    return {};
-  };
-  RefreshTokenService.revokeAllForUser = async (userId, reason) => {
-    calls.revokedSessions = { userId, reason };
-    return [];
-  };
-
-  try {
-    const result = await AuthService.resetPassword({
-      token: plainToken,
-      password: "NewPassword123!",
-    });
-
-    assert.deepEqual(result, { success: true });
-    assert.equal(calls.lookupHash, tokenHash);
-    assert.equal(calls.updatedPassword.userId, "user-1");
-    assert.equal(
-      await bcrypt.compare("NewPassword123!", calls.updatedPassword.passwordHash),
-      true
-    );
-    assert.equal(calls.markedUsed, tokenHash);
-    assert.deepEqual(calls.revokedSessions, {
-      userId: "user-1",
-      reason: "password_reset",
-    });
-  } finally {
-    PasswordResetTokenModel.findByHash = originalFindByHash;
-    AuthModel.findById = originalFindById;
-    AuthModel.updatePassword = originalUpdatePassword;
-    PasswordResetTokenModel.markUsed = originalMarkUsed;
-    RefreshTokenService.revokeAllForUser = originalRevokeAllForUser;
-  }
+  assert.deepEqual(await AuthService.resetPassword({ token, password: "NewPassword123!" }), { success: true });
+  assert.equal(consume.mock.callCount(), 1);
 });
 
 test("reset password rejects expired tokens", async () => {

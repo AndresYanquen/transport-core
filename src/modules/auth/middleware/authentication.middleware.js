@@ -1,6 +1,7 @@
 const AuthModel = require("../models/auth.model");
 const { verifyJwt } = require("../utils/jwt");
 const { env } = require("../../../config");
+const MobileSessions = require("../services/mobile-session.service");
 
 function extractBearerToken(headerValue = "") {
   const matches = headerValue.match(/^Bearer\s+(.+)$/i);
@@ -21,7 +22,7 @@ async function authenticate(req, res, next) {
       secret: env.security.jwtSecret,
     });
 
-    if (!payload.sub) {
+    if (!payload.sub || payload.type !== "access") {
       return res.status(401).json({ message: "Authorization token missing subject." });
     }
 
@@ -30,6 +31,10 @@ async function authenticate(req, res, next) {
     if (!userRow) {
       return res.status(401).json({ message: "User linked to token no longer exists." });
     }
+    if (userRow.status !== "active") return res.status(403).json({ message: "User account is not active." });
+    if (payload.sid) await MobileSessions.assertActive(payload.sid, userRow.id);
+    else MobileSessions.assertAdditionalFactorPolicy(userRow);
+    MobileSessions.assertAccessContext(userRow, payload, `${req.baseUrl || ""}${req.path || ""}`);
 
     const user = AuthModel.toPublicUser(userRow);
 
@@ -44,7 +49,8 @@ async function authenticate(req, res, next) {
     next();
   } catch (error) {
     const status = error.status && Number.isInteger(error.status) ? error.status : 401;
-    res.status(status).json({ message: error.message || "Unauthorized" });
+    res.status(status).json({ message: error.message || "Unauthorized",
+      ...(["OTP_REQUIRED", "ADDITIONAL_FACTOR_REQUIRED"].includes(error.code) ? { code: error.code } : {}) });
   }
 }
 

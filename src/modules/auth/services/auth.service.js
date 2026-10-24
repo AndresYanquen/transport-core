@@ -8,6 +8,8 @@ const { signJwt } = require("../utils/jwt");
 const { normalizePhoneNumber } = require("../utils/phone");
 const GoogleAuthService = require("./google-auth.service");
 const RefreshTokenService = require("./refresh-token.service");
+const MobileSessionModel = require("../models/mobile-session.model");
+const MobileSessions = require("./mobile-session.service");
 const SettingsService = require("../../settings/services/settings.service");
 const PasswordResetTokenModel = require("../models/password-reset-token.model");
 const EmailService = require("../../email/services/email.service");
@@ -142,7 +144,7 @@ async function ensureGoogleProviderLink(userRow, providerUserId) {
   throw error;
 }
 
-function signAccessToken(user) {
+function signAccessToken(user, { sessionId } = {}) {
   const accessTokenExpiresInSeconds = env.security.jwtExpiresInSeconds;
 
   const accessToken = signJwt(
@@ -151,6 +153,7 @@ function signAccessToken(user) {
       role: user.role,
       email: user.email,
       type: "access",
+      ...(sessionId ? { sid: sessionId } : {}),
     },
     {
       secret: env.security.jwtSecret,
@@ -170,15 +173,34 @@ async function buildLoginSession(userRow, {
   refreshToken,
   refreshExpiresIn,
   updateLastLogin = true,
+  transaction = null,
+  mobileInstallation = null,
+  mobileSession = null,
+  onMobileSessionCreated = null,
 } = {}) {
   assertUserCanLogin(userRow);
+  if (updateLastLogin) MobileSessions.assertAdditionalFactorPolicy(userRow);
+  if (["client", "driver"].includes(userRow.role) && userRow.phone_verified && !mobileInstallation && !mobileSession) {
+    throw MobileSessions.requireOtp();
+  }
+
+  if (mobileInstallation) {
+    if (!transaction || refreshToken || mobileSession || !["client", "driver"].includes(userRow.role)) {
+      throw new Error("A new mobile session requires a verified OTP transaction.");
+    }
+    const maxTtlSeconds = env.security.mobileSessionMaxTtlSeconds;
+    if (!Number.isSafeInteger(maxTtlSeconds) || maxTtlSeconds < 1) throw new Error("Invalid mobile session lifetime.");
+    mobileSession = await MobileSessionModel.create({ userId: userRow.id, installation: mobileInstallation,
+      rememberMe, ttlSeconds: RefreshTokenService.getRefreshTokenTtlSeconds(rememberMe), maxTtlSeconds }, transaction);
+    onMobileSessionCreated?.(mobileSession);
+  }
 
   const updatedRow = updateLastLogin
-    ? await AuthModel.updateLastLogin(userRow.id)
+    ? await AuthModel.updateLastLogin(userRow.id, transaction)
     : userRow;
   const user = AuthModel.toPublicUser(updatedRow ?? userRow);
 
-  const signedAccessToken = signAccessToken(user);
+  const signedAccessToken = signAccessToken(user, { sessionId: mobileSession?.id });
   let resolvedRefreshToken = refreshToken;
   let resolvedRefreshExpiresIn = refreshExpiresIn;
 
@@ -187,6 +209,8 @@ async function buildLoginSession(userRow, {
       userId: user.id,
       rememberMe,
       metadata,
+      transaction,
+      mobileSession,
     });
     resolvedRefreshToken = issuedRefreshToken.refreshToken;
     resolvedRefreshExpiresIn = issuedRefreshToken.refreshExpiresIn;
@@ -200,10 +224,27 @@ async function buildLoginSession(userRow, {
     expiresIn: signedAccessToken.expiresIn,
     refreshExpiresIn: resolvedRefreshExpiresIn,
     rememberMe: Boolean(rememberMe),
+    ...(mobileSession ? { session: MobileSessionModel.toPublic(mobileSession) } : {}),
   };
 }
 
-async function registerUser({
+async function registerUser(payload) {
+  // Otherwise an unauthenticated email signup could reserve somebody else's
+  // unique phone number indefinitely without ever proving possession.
+  if (payload.phoneNumber) {
+    const error = new Error("Register by phone using OTP, or link your phone after signing in.");
+    error.status = 400;
+    throw error;
+  }
+  return createRegisteredAccount(payload);
+}
+
+// Internal preparation only: OTP verification must precede issuing a session.
+async function preparePhoneAccount(payload, transaction = null) {
+  return createRegisteredAccount({ ...payload, email: null, password: null }, true, transaction);
+}
+
+async function createRegisteredAccount({
   email,
   password,
   firstName,
@@ -213,7 +254,7 @@ async function registerUser({
   accountType = "client",
   clientProfile = {},
   driverProfile = {},
-}) {
+}, phoneOnly = false, transaction = null) {
   if (!allowedAccountTypes.includes(accountType)) {
     const error = new Error(
       `accountType must be one of: ${allowedAccountTypes.join(", ")}.`
@@ -239,10 +280,15 @@ async function registerUser({
     throw error;
   }
 
-  const passwordHash = await bcrypt.hash(password, PASSWORD_SALT_ROUNDS);
-  const emailVerificationToken = generateToken(VERIFICATION_TOKEN_BYTES);
   const normalizedPhoneNumber = phoneNumber ? normalizePhoneNumber(phoneNumber) : null;
-  const phoneVerificationToken = normalizedPhoneNumber
+  if (phoneOnly && !normalizedPhoneNumber) {
+    const error = new Error("phoneNumber is required.");
+    error.status = 400;
+    throw error;
+  }
+  const passwordHash = phoneOnly ? null : await bcrypt.hash(password, PASSWORD_SALT_ROUNDS);
+  const emailVerificationToken = phoneOnly ? null : generateToken(VERIFICATION_TOKEN_BYTES);
+  const phoneVerificationToken = normalizedPhoneNumber && !phoneOnly
     ? generateToken(VERIFICATION_TOKEN_BYTES)
     : null;
 
@@ -284,8 +330,8 @@ async function registerUser({
     lastName,
     phoneNumber: normalizedPhoneNumber,
     accountType: normalizedAccountType,
-    emailVerificationToken: hashToken(emailVerificationToken),
-    emailVerificationSentAt: createdAt,
+    emailVerificationToken: emailVerificationToken ? hashToken(emailVerificationToken) : null,
+    emailVerificationSentAt: emailVerificationToken ? createdAt : null,
     phoneVerificationToken: phoneVerificationToken
       ? hashToken(phoneVerificationToken)
       : null,
@@ -294,7 +340,7 @@ async function registerUser({
       normalizedAccountType === "client" ? normalizedClientProfile : undefined,
     driverProfile:
       normalizedAccountType === "driver" ? normalizedDriverProfile : undefined,
-  });
+  }, transaction);
 
   const user = AuthModel.toPublicUser(userRow);
 
@@ -364,6 +410,7 @@ async function loginWithGoogle({ idToken, rememberMe = false }, metadata = {}) {
   userRow = await AuthModel.findByEmail(googleIdentity.email);
 
   if (userRow) {
+    assertVerifiedGoogleLink(userRow);
     await ensureGoogleProviderLink(userRow, googleIdentity.providerUserId);
     userRow = await AuthModel.markEmailVerified(userRow.id) || userRow;
 
@@ -389,6 +436,8 @@ async function loginWithGoogle({ idToken, rememberMe = false }, metadata = {}) {
     },
   });
 
+  // createGoogleClientUser can return an existing row after a concurrent signup.
+  assertVerifiedGoogleLink(userRow);
   await ensureGoogleProviderLink(userRow, googleIdentity.providerUserId);
   userRow = await AuthModel.markEmailVerified(userRow.id) || userRow;
 
@@ -400,19 +449,30 @@ async function loginWithGoogle({ idToken, rememberMe = false }, metadata = {}) {
   return buildLoginSession(userRow, { rememberMe, metadata });
 }
 
-async function refreshSession({ refreshToken, rememberMe = false }, metadata = {}) {
+function assertVerifiedGoogleLink(userRow) {
+  if (!userRow || userRow.email_verified !== true) {
+    const error = new Error("Sign in with your existing method before linking Google.");
+    error.status = 409;
+    throw error;
+  }
+  assertUserCanLogin(userRow);
+}
+
+async function refreshSession({ refreshToken, rememberMe = false, deviceId }, metadata = {}) {
   const rotatedToken = await RefreshTokenService.rotateRefreshToken({
     refreshToken,
     rememberMe,
     metadata,
+    deviceId,
   });
 
   return buildLoginSession(rotatedToken.userRow, {
-    rememberMe,
+    rememberMe: rotatedToken.rememberMe ?? rememberMe,
     metadata,
     refreshToken: rotatedToken.refreshToken,
     refreshExpiresIn: rotatedToken.refreshExpiresIn,
     updateLastLogin: false,
+    mobileSession: rotatedToken.mobileSession,
   });
 }
 
@@ -475,9 +535,12 @@ async function resetPassword({ token, password }) {
   }
 
   const passwordHash = await bcrypt.hash(password, PASSWORD_SALT_ROUNDS);
-  await AuthModel.updatePassword(userRow.id, passwordHash);
-  await PasswordResetTokenModel.markUsed(tokenHash);
-  await RefreshTokenService.revokeAllForUser(userRow.id, "password_reset");
+  const consumed = await PasswordResetTokenModel.consumeAndResetPassword({ tokenHash, passwordHash });
+  if (!consumed) {
+    const error = new Error("El enlace de recuperación es inválido o expiró.");
+    error.status = 400;
+    throw error;
+  }
 
   return { success: true };
 }
@@ -518,6 +581,7 @@ async function getCurrentUser(authenticatedUser) {
 
 module.exports = {
   registerUser,
+  preparePhoneAccount,
   loginUser,
   loginWithGoogle,
   refreshSession,

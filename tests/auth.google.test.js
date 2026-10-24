@@ -4,6 +4,7 @@ const test = require("node:test");
 const GoogleAuthService = require("../src/modules/auth/services/google-auth.service");
 const validateAuth = require("../src/modules/auth/middleware/validate-auth.middleware");
 const AuthService = require("../src/modules/auth/services/auth.service");
+const AuthModel = require("../src/modules/auth/models/auth.model");
 
 function createMockResponse() {
   return {
@@ -111,4 +112,22 @@ test("does not issue sessions for inactive users", async () => {
       return true;
     }
   );
+});
+
+test("Google cannot auto-link an unverified local email", async (t) => {
+  t.mock.method(GoogleAuthService, "verifyGoogleIdToken", async () => ({ providerUserId: "google-id", email: "user@example.com" }));
+  t.mock.method(AuthModel, "findByAuthProvider", async () => null);
+  t.mock.method(AuthModel, "findByEmail", async () => ({ id: "local", email_verified: false, status: "active" }));
+  const link = t.mock.method(AuthModel, "linkAuthProvider", async () => assert.fail("unverified email must not link"));
+  await assert.rejects(AuthService.loginWithGoogle({ idToken: "mock" }), { status: 409 });
+  assert.equal(link.mock.callCount(), 0);
+});
+
+test("Google rechecks email verification after a concurrent account creation", async (t) => {
+  t.mock.method(GoogleAuthService, "verifyGoogleIdToken", async () => ({ providerUserId: "google-id", email: "user@example.com" }));
+  t.mock.method(AuthModel, "findByAuthProvider", async () => null);
+  t.mock.method(AuthModel, "findByEmail", async () => null);
+  t.mock.method(AuthModel, "createGoogleClientUser", async () => ({ id: "concurrent", email_verified: false, status: "active" }));
+  t.mock.method(AuthModel, "linkAuthProvider", async () => assert.fail("race must not bypass verification"));
+  await assert.rejects(AuthService.loginWithGoogle({ idToken: "mock" }), { status: 409 });
 });

@@ -1,5 +1,10 @@
 # Coolify Deployment
 
+For phone OTP, Flutter contracts, test commands and staged activation, see
+[authentication validation and release](auth-validation-release.md) and
+[Flutter authentication contract](flutter-auth-contract.md). Phone rollout defaults
+to zero percent; production must use the Inalambria provider, never the mock.
+
 This repository is set up for Coolify with Docker Compose and Supabase PostgreSQL. The production stack runs:
 
 - `redis`: Redis with a persistent Docker volume.

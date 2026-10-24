@@ -14,6 +14,7 @@ const baseUserSelect = `
     u.status,
     u.email_verified,
     u.phone_verified,
+    u.mobile_additional_factor_required,
     u.email_verification_token,
     u.email_verification_sent_at,
     u.phone_verification_token,
@@ -94,8 +95,9 @@ class AuthModel {
     return rows[0] ?? null;
   }
 
-  static async findById(id) {
-    const { rows } = await query(
+  static async findById(id, transaction = null) {
+    const execute = transaction ? transaction.query.bind(transaction) : query;
+    const { rows } = await execute(
       `
         ${baseUserSelect}
         WHERE u.id = $1
@@ -240,19 +242,31 @@ class AuthModel {
   }
 
   static async findClientByPhoneNumber(phoneNumber) {
+    return this.findMobileAccountByPhoneNumber(phoneNumber, "client");
+  }
+
+  static async findMobileAccountByPhoneNumber(phoneNumber, accountType = null, transaction = null) {
+    if (accountType !== null && !["client", "driver"].includes(accountType)) {
+      const error = new Error("Phone authentication supports client and driver accounts only.");
+      error.status = 400;
+      throw error;
+    }
     const normalizedPhone = normalizePhoneNumber(phoneNumber);
     if (!normalizedPhone) return null;
 
-    const { rows } = await query(
+    const execute = transaction ? transaction.query.bind(transaction) : query;
+    const { rows } = await execute(
       `
         ${baseUserSelect}
-        WHERE u.role = 'client'
+        WHERE u.role IN ('client', 'driver')
+          AND ($2::text IS NULL OR u.role = $2)
           AND u.phone_number = $1
           AND u.deleted_at IS NULL
         ORDER BY u.created_at ASC
         LIMIT 1
+        ${transaction ? "FOR UPDATE OF u" : ""}
       `,
-      [normalizedPhone]
+      [normalizedPhone, accountType]
     );
 
     return rows[0] ?? null;
@@ -325,9 +339,14 @@ class AuthModel {
       if (
         error.code === "23505" &&
         (error.constraint === "users_client_phone_unique_not_null" ||
+          error.constraint === "users_mobile_phone_unique_not_null" ||
           error.detail?.includes("(phone_number)"))
       ) {
-        return this.findClientByPhoneNumber(normalizedPhone);
+        const existingClient = await this.findClientByPhoneNumber(normalizedPhone);
+        if (existingClient) return existingClient;
+        const conflictError = new Error("Phone number already registered.");
+        conflictError.status = 409;
+        throw conflictError;
       }
 
       throw error;
@@ -352,13 +371,13 @@ class AuthModel {
     accountType = "client",
     clientProfile,
     driverProfile,
-  }) {
+  }, transaction = null) {
     const normalizedEmail = email ? String(email).trim().toLowerCase() : null;
     const normalizedPhone = phoneNumber ? normalizePhoneNumber(phoneNumber) : null;
-    const client = await pool.connect();
+    const client = transaction || await pool.connect();
 
     try {
-      await client.query("BEGIN");
+      if (!transaction) await client.query("BEGIN");
 
       const resolvedRole = ["admin", "operator", "driver", "client"].includes(accountType)
         ? accountType
@@ -401,7 +420,7 @@ class AuthModel {
         [
           normalizedEmail,
           username ?? null,
-          passwordHash,
+          passwordHash ?? null,
           firstName ?? null,
           lastName ?? null,
           normalizedPhone,
@@ -510,18 +529,19 @@ class AuthModel {
         );
       }
 
-      await client.query("COMMIT");
+      if (!transaction) await client.query("COMMIT");
 
-      return this.findById(userId);
+      return this.findById(userId, transaction);
     } catch (error) {
-      await client.query("ROLLBACK");
+      if (!transaction) await client.query("ROLLBACK");
       if (error.code === "23505") {
         const conflictField = error.detail?.includes("lower(email)") ||
           error.constraint === "users_email_unique_not_null" ||
           error.detail?.includes("(email)")
           ? "Email"
           : error.detail?.includes("(phone_number)") ||
-            error.constraint === "users_client_phone_unique_not_null"
+            error.constraint === "users_client_phone_unique_not_null" ||
+            error.constraint === "users_mobile_phone_unique_not_null"
           ? "Phone number"
           : error.detail?.includes("(username)")
           ? "Username"
@@ -536,12 +556,13 @@ class AuthModel {
 
       throw error;
     } finally {
-      client.release();
+      if (!transaction) client.release();
     }
   }
 
-  static async updateLastLogin(userId) {
-    const { rows } = await query(
+  static async updateLastLogin(userId, transaction = null) {
+    const execute = transaction ? transaction.query.bind(transaction) : query;
+    const { rows } = await execute(
       `
         UPDATE users
         SET last_login_at = NOW()
@@ -555,7 +576,7 @@ class AuthModel {
       return null;
     }
 
-    return this.findById(rows[0].id);
+    return this.findById(rows[0].id, transaction);
   }
 
   static async findByEmailVerificationToken(tokenHash) {

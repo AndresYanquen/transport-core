@@ -8,6 +8,7 @@
     "start:prod": "NODE_ENV=production node src/server.js",
     "deploy:check": "npm test",
     "test": "node --test",
+    "test:auth:integration": "RUN_PHONE_OTP_DB_TESTS=1 node --test tests/auth.phone-otp.integration.test.js",
     "simulate": "node simulator/simulator.js",
     "simulate:race": "DRIVER_COUNT=2 CUSTOMER_COUNT=1 node simulator/backendRaceTest.js",
     "simulate:retries": "DRIVER_COUNT=1 CUSTOMER_COUNT=1 node simulator/backendRetryTest.js",

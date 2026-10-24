@@ -10,7 +10,9 @@ function requestLogger(req, res, next) {
   }
 
   const startedAt = process.hrtime.bigint();
-  const requestId = req.headers["x-request-id"] || crypto.randomUUID();
+  const suppliedId = req.headers["x-request-id"];
+  const requestId = typeof suppliedId === "string" && /^[0-9a-f-]{36}$/i.test(suppliedId)
+    ? suppliedId : crypto.randomUUID();
 
   req.requestId = requestId;
   res.setHeader("X-Request-Id", requestId);
@@ -20,7 +22,8 @@ function requestLogger(req, res, next) {
     logger.info("http_request", {
       requestId,
       method: req.method,
-      path: req.originalUrl,
+      // OTPs and identity tokens supplied in a query string must never reach logs.
+      path: req.path,
       statusCode: res.statusCode,
       durationMs: Math.round(durationMs * 100) / 100,
       ip: req.ip,

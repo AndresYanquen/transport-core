@@ -156,6 +156,7 @@ const env = {
       2592000
     ),
     refreshTokenBytes: parseNumber(process.env.REFRESH_TOKEN_BYTES, 64),
+    mobileSessionMaxTtlSeconds: parseNumber(process.env.MOBILE_SESSION_MAX_TTL_SECONDS, 2592000),
     passwordResetTtlSeconds: parseNumber(
       process.env.PASSWORD_RESET_TTL_SECONDS,
       30 * 60
@@ -168,6 +169,27 @@ const env = {
   app: {
     publicUrl: String(process.env.APP_PUBLIC_URL || "http://localhost:5173").replace(/\/+$/, ""),
   },
+  phoneAuth: {
+    enabled: parseBoolean(process.env.PHONE_AUTH_ENABLED, false),
+    smsProvider: process.env.PHONE_SMS_PROVIDER || "inalambria",
+    rolloutPercent: parseNumber(process.env.PHONE_AUTH_ROLLOUT_PERCENT, 0),
+    allowedNumbers: parseCsv(process.env.PHONE_AUTH_ALLOWED_NUMBERS),
+    hashSecret: process.env.PHONE_OTP_HASH_SECRET || "",
+    ttlSeconds: 300,
+    maxAttempts: 5,
+    resendSeconds: 60,
+    phoneHourlyLimit: 3,
+    phoneDailyLimit: 10,
+    ipQuarterHourLimit: 20,
+    deviceHourlyLimit: 3,
+    globalMinuteLimit: parseNumber(process.env.PHONE_OTP_GLOBAL_MINUTE_LIMIT, 10),
+    globalDailyLimit: parseNumber(process.env.PHONE_OTP_GLOBAL_DAILY_LIMIT, 100),
+    allowedCountries: parseCsv(process.env.PHONE_OTP_ALLOWED_COUNTRIES, ["CO"]),
+  },
+  inalambria: {
+    apiKey: process.env.INALAMBRIA_API_KEY || "",
+    timeoutMs: 18000,
+  },
   mail: {
     host: process.env.MAIL_HOST || "",
     port: parseNumber(process.env.MAIL_PORT, 587),
@@ -179,6 +201,7 @@ const env = {
   realtime: {
     enabled: parseBoolean(process.env.SOCKET_ENABLED, true),
     path: process.env.SOCKET_PATH || "/socket.io",
+    sessionCheckIntervalMs: Math.min(60000, Math.max(100, parseNumber(process.env.SOCKET_SESSION_CHECK_INTERVAL_MS, 5000))),
   },
   redis: {
     url: process.env.REDIS_URL || "",

@@ -6,6 +6,11 @@ function validateProductionEnv() {
   }
 
   const missing = [];
+  if (env.phoneAuth.smsProvider === "mock") missing.push("PHONE_SMS_PROVIDER must not be mock in production");
+  if (env.phoneAuth.enabled) {
+    try { require("../modules/auth/services/otp-sms.service").assertConfigured(); }
+    catch { missing.push("phone authentication configuration"); }
+  }
 
   if (!process.env.JWT_SECRET || process.env.JWT_SECRET === "dev-insecure-jwt-secret") {
     missing.push("JWT_SECRET");

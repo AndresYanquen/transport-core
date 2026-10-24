@@ -97,11 +97,12 @@ function verifyJwt(token, { secret, clockToleranceSeconds = 0 } = {}) {
     throw createUnauthorizedError("Invalid token payload.");
   }
 
-  if (payload.exp) {
-    const currentTime = Math.floor(Date.now() / 1000);
-    if (currentTime > payload.exp + Number(clockToleranceSeconds)) {
-      throw createUnauthorizedError("Authorization token has expired.");
-    }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload) || !Number.isFinite(payload.exp)) {
+    throw createUnauthorizedError("Authorization token requires a valid expiration.");
+  }
+  const currentTime = Math.floor(Date.now() / 1000);
+  if (currentTime >= payload.exp + Number(clockToleranceSeconds)) {
+    throw createUnauthorizedError("Authorization token has expired.");
   }
 
   return payload;

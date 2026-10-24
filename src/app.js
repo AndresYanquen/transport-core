@@ -115,6 +115,7 @@ app.use((err, _req, res, _next) => {
   const isProduction = String(env.nodeEnv || "").toLowerCase() === "production";
   res.status(err.status || 500).json({
     message: isProduction && !err.status ? "Internal server error" : err.message || "Internal server error",
+    ...(["OTP_REQUIRED", "ADDITIONAL_FACTOR_REQUIRED"].includes(err.code) ? { code: err.code } : {}),
   });
 });
 

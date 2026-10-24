@@ -7,9 +7,12 @@ const { initializeRedisClients } = require("../config/redis");
 const { logger } = require("../config/logger");
 const AuthModel = require("../modules/auth/models/auth.model");
 const { verifyJwt } = require("../modules/auth/utils/jwt");
+const MobileSessions = require("../modules/auth/services/mobile-session.service");
+const { events: mobileSessionEvents } = require("../modules/auth/services/mobile-session-events");
 const { query } = require("../config/database");
 
 let ioInstance = null;
+let onSessionRevoked = null;
 const PUBLIC_TRACKING_SCOPE = "ride_tracking";
 const uuidV4LikeRegex =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
@@ -46,6 +49,8 @@ function roleRoom(role) {
 function rideRoom(rideId) {
   return `ride:${rideId}`;
 }
+
+function mobileSessionRoom(id) { return `mobile-session:${id}`; }
 
 async function ensureTrackingTokenCanAccessRideRoom({ rideId, trackingToken }) {
   if (!uuidV4LikeRegex.test(String(rideId || ""))) {
@@ -146,7 +151,7 @@ async function socketAuthMiddleware(socket, next) {
       return next();
     }
 
-    if (!payload.sub) {
+    if (!payload.sub || payload.type !== "access") {
       return next(new Error("Authorization token missing subject."));
     }
 
@@ -155,6 +160,21 @@ async function socketAuthMiddleware(socket, next) {
     if (!userRow) {
       return next(new Error("User linked to token no longer exists."));
     }
+    if (userRow.status !== "active") return next(new Error("User account is not active."));
+    MobileSessions.assertAccessContext(userRow, payload);
+    if (payload.sid) {
+      await MobileSessions.assertActive(payload.sid, userRow.id);
+      socket.use(async (_packet, proceed) => {
+        try {
+          verifyJwt(token, { secret: env.security.jwtSecret });
+          await MobileSessions.assertActive(payload.sid, userRow.id);
+          proceed();
+        } catch {
+          proceed(new Error("Mobile session is invalid or expired."));
+          socket.disconnect(true);
+        }
+      });
+    } else MobileSessions.assertAdditionalFactorPolicy(userRow);
 
     const user = AuthModel.toPublicUser(userRow);
 
@@ -207,6 +227,24 @@ function registerConnectionHandlers(io) {
     }
 
     const { user } = socket.data;
+    const { payload } = socket.data.auth;
+    if (payload.sid) {
+      socket.join(mobileSessionRoom(payload.sid));
+      let checking = false;
+      const interval = setInterval(async () => {
+        if (checking) return;
+        checking = true;
+        try {
+          verifyJwt(socket.data.auth.token, { secret: env.security.jwtSecret });
+          await MobileSessions.assertActive(payload.sid, user.id);
+        } catch { socket.disconnect(true); }
+        finally { checking = false; }
+      }, env.realtime.sessionCheckIntervalMs);
+      interval.unref();
+      const expiry = setTimeout(() => socket.disconnect(true), Math.min(2147483647, Math.max(0, payload.exp * 1000 - Date.now())));
+      expiry.unref();
+      socket.once("disconnect", () => { clearInterval(interval); clearTimeout(expiry); });
+    }
     socket.join(userRoom(user.id));
     socket.join(roleRoom(user.role));
 
@@ -281,6 +319,10 @@ async function initializeSocketServer(httpServer) {
   }
 
   io.use(socketAuthMiddleware);
+  onSessionRevoked = (ids) => {
+    for (const id of ids) io.in(mobileSessionRoom(id)).disconnectSockets(true);
+  };
+  mobileSessionEvents.on("revoked", onSessionRevoked);
   registerConnectionHandlers(io);
   ioInstance = io;
 
@@ -299,6 +341,8 @@ function closeSocketServer() {
     }
 
     ioInstance.close((error) => {
+      if (onSessionRevoked) mobileSessionEvents.off("revoked", onSessionRevoked);
+      onSessionRevoked = null;
       if (error) {
         reject(error);
         return;

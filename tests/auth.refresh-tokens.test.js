@@ -7,6 +7,17 @@ const validateAuth = require("../src/modules/auth/middleware/validate-auth.middl
 const { verifyJwt } = require("../src/modules/auth/utils/jwt");
 const { env } = require("../src/config");
 
+test("access token expires at its exact exp second", (t) => {
+  const { signJwt } = require("../src/modules/auth/utils/jwt");
+  const now = 1800000000000;
+  const clock = t.mock.method(Date, "now", () => now);
+  const token = signJwt({ sub: "test", type: "access" }, { secret: env.security.jwtSecret, expiresInSeconds: 2 });
+  clock.mock.mockImplementation(() => now + 1999);
+  assert.doesNotThrow(() => verifyJwt(token, { secret: env.security.jwtSecret }));
+  clock.mock.mockImplementation(() => now + 2000);
+  assert.throws(() => verifyJwt(token, { secret: env.security.jwtSecret }), { status: 401 });
+});
+
 function createMockResponse() {
   return {
     statusCode: null,
