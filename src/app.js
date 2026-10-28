@@ -51,6 +51,7 @@ app.use("/api/auth", authRateLimiter, authRoutes);
 app.use("/api/webhooks", whatsappWebhookRoutes);
 app.use("/api/rides/public", publicRideTrackingRoutes);
 app.use("/api/rides", authenticate, rideRoutes);
+app.use("/api/push", authenticate, require("./modules/push/routes/push.routes"));
 app.use("/api/drivers", authenticate, driverRoutes);
 app.use("/api/places", authenticate, placesRoutes);
 app.use("/api/preferences", authenticate, preferencesRoutes);

@@ -8,3 +8,8 @@ node_modules
 npm-debug.log
 simulator
 tests
+
+# Never include Firebase Admin credentials.
+.secrets/
+*firebase-adminsdk*.json
+*service-account*.json

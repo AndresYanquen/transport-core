@@ -23,7 +23,8 @@
     "migrate:rollback": "npx knex migrate:rollback",
     "seed:run": "npx knex seed:run",
     "seed:make": "npx knex seed:make",
-    "test:profiles:integration": "RUN_PROFILE_DB_TESTS=1 node --test tests/user-profile.integration.test.js"
+    "test:profiles:integration": "RUN_PROFILE_DB_TESTS=1 node --test tests/user-profile.integration.test.js",
+    "test:push:integration": "RUN_PUSH_DB_TESTS=1 node --test tests/push.integration.test.js tests/push-fallback.integration.test.js"
   },
   "keywords": [],
   "author": "",
@@ -39,6 +40,7 @@
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "express-rate-limit": "^8.6.1",
+    "firebase-admin": "^14.5.0",
     "google-auth-library": "^11.0.2",
     "helmet": "^8.3.0",
     "knex": "^3.1.0",

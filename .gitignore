@@ -3,3 +3,8 @@ client/node_modules
 client/dist
 .env
 simulator/output
+
+# Never include Firebase Admin credentials.
+.secrets/
+*firebase-adminsdk*.json
+*service-account*.json

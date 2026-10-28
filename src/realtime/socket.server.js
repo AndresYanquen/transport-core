@@ -272,6 +272,7 @@ function registerConnectionHandlers(io) {
 
     const { registerRadioSocketHandlers } = require("../modules/radio/realtime/radio.socket");
     registerRadioSocketHandlers(io, socket, { userRoom });
+    require("../modules/push/realtime/push.socket").registerPushSocketHandlers(socket);
 
     socket.on("ride:subscribe", async ({ rideId } = {}) => {
       if (!rideId) {

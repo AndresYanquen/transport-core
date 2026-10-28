@@ -2,6 +2,10 @@
 
 Modular Node.js backend powered by Express. Features a pluggable module system with dedicated sub-folders for controllers, services, models, routes, and middleware. The first module implemented is `auth`, which demonstrates the expected layout.
 
+## Firebase push notifications
+
+Optional FCM backend integration, device API, Flutter contracts, migrations and Coolify setup: [Firebase push backend](docs/firebase-push-backend.md). Disabled by default (`PUSH_ENABLED=false`). Invitation presentation acknowledgements and per-installation Socket.IO/FCM fallback are documented in [invitation fallback](docs/push-socket-fallback.md).
+
 ## Getting Started
 
 ```bash

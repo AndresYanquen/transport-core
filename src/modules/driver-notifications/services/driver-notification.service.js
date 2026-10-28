@@ -2,6 +2,8 @@ const DriverNotificationModel = require("../models/driver-notification.model");
 const DriverModel = require("../../drivers/models/driver.model");
 const { emitToRole } = require("../../../realtime/socket.server");
 
+const PushEvents = require("../../push/services/push-events.service");
+
 const PANIC_COOLDOWN_SECONDS = 300;
 const ACTIVE_STATUSES = new Set(["unread", "acknowledged"]);
 
@@ -55,6 +57,7 @@ async function createPanicAlert(driverId, payload = {}) {
     metadata,
   });
 
+  await PushEvents.safely(() => PushEvents.panic(notification));
   emitNotification(notification, "operations:driver-panic-created");
 
   return { notification, idempotent: false };

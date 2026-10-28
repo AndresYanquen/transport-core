@@ -13,6 +13,9 @@ const {
 } = require("./modules/drivers/services/driver-presence.worker");
 const { startRadioWorker, stopRadioWorker } = require("./modules/radio/services/radio.worker");
 
+const { initializeFirebase } = require("./config/firebase");
+const { startPushWorker, stopPushWorker } = require("./modules/push/services/push.worker");
+
 const server = http.createServer(app);
 
 let shuttingDown = false;
@@ -39,6 +42,7 @@ async function shutdown(signal) {
   forceExitTimer.unref();
 
   try {
+    await stopPushWorker();
     await closeSocketServer();
     await closeRedisClients();
     await new Promise((resolve, reject) => {
@@ -64,6 +68,8 @@ async function start() {
     await initializeSocketServer(server);
     startDriverPresenceWorker();
     startRadioWorker();
+    initializeFirebase();
+    startPushWorker();
 
     server.listen(env.port, () => {
       logger.info("server_listening", { port: env.port, nodeEnv: env.nodeEnv });

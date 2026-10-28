@@ -27,6 +27,9 @@ const SettingsService = require("../../settings/services/settings.service");
 const { env } = require("../../../config");
 const { signJwt } = require("../../auth/utils/jwt");
 
+const PushEvents = require("../../push/services/push-events.service");
+const { invitationEventId } = require("../../push/services/invitation-identity");
+
 const pool = RideModel.getPool();
 const CLIENT_DRIVER_SEARCH_RADIUS_SETTING = "client_driver_search_radius_meters";
 const PUBLIC_TRACKING_SCOPE = "ride_tracking";
@@ -98,6 +101,8 @@ async function emitRideStatusUpdated({
     return;
   }
 
+  await PushEvents.safely(() => PushEvents.rideStatus({ ride, event }));
+
   let payloadRide = ride;
   try {
     const enrichedRideRow = await RideModel.getRideById(ride.id, {
@@ -163,7 +168,7 @@ async function emitRideStatusUpdated({
   safeRealtimeEmit(() => emitToRole("operator", "operations:ride-updated", operationsPayload));
 }
 
-function emitDriverInvitesCreated({
+async function emitDriverInvitesCreated({
   ride,
   invites,
 }) {
@@ -171,8 +176,11 @@ function emitDriverInvitesCreated({
     return;
   }
 
-  invites.forEach((invite) => {
+  for (const invite of invites) {
+    await PushEvents.safely(() => PushEvents.invitations({ ride, invites: [invite] }));
     const payload = {
+      eventId: invitationEventId(invite),
+      schemaVersion: "1",
       rideId: ride.id,
       invite,
       ride,
@@ -180,7 +188,7 @@ function emitDriverInvitesCreated({
     };
 
     safeRealtimeEmit(() => emitToUser(invite.driverId, "ride:invite-created", payload));
-  });
+  }
 
   if (ride.clientId) {
     safeRealtimeEmit(() =>
@@ -1136,7 +1144,7 @@ async function assignDriver({
       });
     }
 
-    emitDriverInvitesCreated({
+    await emitDriverInvitesCreated({
       ride: result.ride,
       invites,
     });

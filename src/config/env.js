@@ -169,6 +169,17 @@ const env = {
   app: {
     publicUrl: String(process.env.APP_PUBLIC_URL || "http://localhost:5173").replace(/\/+$/, ""),
   },
+  push: {
+    enabled: parseBoolean(process.env.PUSH_ENABLED, false),
+    projectId: process.env.FIREBASE_PROJECT_ID || "gottaxi-191c2",
+    intervalMs: Math.min(60000, Math.max(100, parseNumber(process.env.PUSH_WORKER_INTERVAL_MS, 500))),
+    invitationAckWaitMs: Math.min(10000, Math.max(0, Math.floor(parseNumber(process.env.PUSH_INVITATION_ACK_WAIT_MS, 2000)))),
+    visibilityTtlSeconds: Math.min(120, Math.max(10, parseNumber(process.env.PUSH_VISIBILITY_TTL_SECONDS, 40))),
+    batchSize: Math.min(500, Math.max(1, Math.floor(parseNumber(process.env.PUSH_BATCH_SIZE, 50)))),
+    maxAttempts: Math.min(10, Math.max(1, Math.floor(parseNumber(process.env.PUSH_MAX_ATTEMPTS, 3)))),
+    inviteTtlSeconds: Math.min(90, Math.max(1, parseNumber(process.env.PUSH_INVITE_TTL_SECONDS, 60))),
+    retentionDays: Math.max(1, parseNumber(process.env.PUSH_RETENTION_DAYS, 30)),
+  },
   phoneAuth: {
     enabled: parseBoolean(process.env.PHONE_AUTH_ENABLED, false),
     smsProvider: process.env.PHONE_SMS_PROVIDER || "inalambria",
