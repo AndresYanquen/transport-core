@@ -1,5 +1,7 @@
 <script setup>
 import { computed, onMounted, reactive } from "vue";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "../../../components/ui/dialog";
+import ProfileEditor from "../../users/components/ProfileEditor.vue";
 import { Plus, RefreshCw, UserPlus } from "lucide-vue-next";
 import { apiRequest } from "../../../services/api.js";
 
@@ -11,6 +13,7 @@ const roles = [
 ];
 
 const state = reactive({
+  editingId: "",
   users: [],
   loading: false,
   saving: false,
@@ -240,6 +243,13 @@ onMounted(fetchUsers);
 </script>
 
 <template>
+  <Dialog :open="Boolean(state.editingId)" @update:open="(open) => { if (!open) state.editingId = '' }">
+    <DialogContent v-if="state.editingId" class="max-h-[90vh] overflow-y-auto bg-white sm:max-w-2xl">
+      <DialogTitle>Editar usuario</DialogTitle>
+      <DialogDescription>Completa los datos del perfil. Los cambios de licencia, vehículo o documentos requieren revisión.</DialogDescription>
+      <ProfileEditor :key="state.editingId" :endpoint="`/api/admin/users/${state.editingId}`" administrative @saved="fetchUsers" />
+    </DialogContent>
+  </Dialog>
   <section class="grid gap-4 p-4">
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div>
@@ -413,7 +423,7 @@ onMounted(fetchUsers);
                 <th class="py-2 pr-3">Usuario</th>
                 <th class="py-2 pr-3">Rol</th>
                 <th class="py-2 pr-3">Estado</th>
-                <th class="py-2 pr-3">Creado</th>
+                <th class="py-2 pr-3">Creado</th><th class="py-2 pr-3">Acciones</th>
               </tr>
               <tr class="border-b border-slate-200 bg-slate-50">
                 <th class="py-2 pr-3">
@@ -464,6 +474,7 @@ onMounted(fetchUsers);
                     />
                   </div>
                 </th>
+                <th aria-label="Acciones"></th>
               </tr>
             </thead>
             <tbody>
@@ -474,13 +485,13 @@ onMounted(fetchUsers);
                 </td>
                 <td class="py-2 pr-3">{{ user.role }}</td>
                 <td class="py-2 pr-3">{{ user.status }}</td>
-                <td class="py-2 pr-3">{{ formatDate(user.createdAt) }}</td>
+                <td class="py-2 pr-3">{{ formatDate(user.createdAt) }}</td><td class="py-2 pr-3"><button type="button" class="underline" @click="state.editingId = user.id">Editar</button></td>
               </tr>
               <tr v-if="!state.loading && filteredUsers.length === 0">
-                <td class="py-8 text-center text-slate-500" colspan="4">No hay usuarios.</td>
+                <td class="py-8 text-center text-slate-500" colspan="5">No hay usuarios.</td>
               </tr>
               <tr v-if="state.loading">
-                <td class="py-8 text-center text-slate-500" colspan="4">Cargando...</td>
+                <td class="py-8 text-center text-slate-500" colspan="5">Cargando...</td>
               </tr>
             </tbody>
           </table>

@@ -31,6 +31,7 @@ async function authenticate(req, res, next) {
     if (!userRow) {
       return res.status(401).json({ message: "User linked to token no longer exists." });
     }
+    if ((payload.cv || 0) !== (userRow.security_version || 0)) return res.status(401).json({ message: "Credentials changed. Sign in again." });
     if (userRow.status !== "active") return res.status(403).json({ message: "User account is not active." });
     if (payload.sid) await MobileSessions.assertActive(payload.sid, userRow.id);
     else MobileSessions.assertAdditionalFactorPolicy(userRow);

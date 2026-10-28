@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from "vue-router";
 import { useAuthStore } from "../stores/auth.js";
 
 const routes = [
+  { path: "/profile", name: "user-profile", component: () => import("../modules/users/views/UserProfileView.vue"), meta: { layout: "desktop" } },
   {
     path: "/",
     redirect: { name: "admin-login" },

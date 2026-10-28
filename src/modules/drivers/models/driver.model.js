@@ -185,6 +185,7 @@ async function updateStatus(driverId, status, dbClient) {
       FROM users u
       WHERE d.user_id = $2
         AND u.id = d.user_id
+        AND ($1 <> 'online' OR (d.approval_status = 'approved' AND u.status = 'active'))
       RETURNING ${BASE_DRIVER_FIELDS}
     `,
     [status, driverId]

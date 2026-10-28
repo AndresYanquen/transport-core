@@ -49,6 +49,8 @@ test("phone OTP PostgreSQL integration", { skip: process.env.RUN_PHONE_OTP_DB_TE
     assert.equal(session.user.phoneVerified, true);
     assert.equal(session.user.email, null);
     assert.equal(session.user.role, "client");
+    assert.equal(session.user.registrationComplete, true);
+    assert.deepEqual(session.user.missingRegistrationFields, []);
     assert.ok(session.accessToken);
     assert.ok(session.refreshToken);
     const row = await Users.findById(session.user.id);
@@ -535,6 +537,47 @@ test("phone OTP PostgreSQL integration", { skip: process.env.RUN_PHONE_OTP_DB_TE
       assert.equal((await api("/api/auth/me", { token: login.accessToken })).status, 200);
       assert.equal((await api("/api/admin/users", { token: login.accessToken })).status, 403);
       assert.equal(responses.find((r) => r.status === 200).headers.get("cache-control"), "no-store");
+    });
+
+    await network.test("OTP account remains pending across sessions until first name is saved", async () => {
+      const phone = "+573001112513";
+      const login = await loginInstallation(phone);
+      assert.equal(login.isNewUser, true);
+      assert.ok(login.accessToken);
+      assert.ok(login.refreshToken);
+      assert.equal(login.user.firstName, null);
+      assert.equal(login.user.registrationComplete, false);
+      assert.deepEqual(login.user.missingRegistrationFields, ["firstName"]);
+
+      const me = await api("/api/auth/me", { token: login.accessToken });
+      assert.equal(me.status, 200);
+      assert.equal(me.body.user.registrationComplete, false);
+      const restored = await loginInstallation(phone);
+      assert.equal(restored.isNewUser, false);
+      assert.equal(restored.user.registrationComplete, false);
+      const refresh = await api("/api/auth/refresh", { method: "POST", body: {
+        refreshToken: restored.refreshToken, deviceId: restored.session.installationId,
+      } });
+      assert.equal(refresh.status, 200);
+      assert.equal(refresh.body.user.registrationComplete, false);
+      const token = refresh.body.accessToken;
+
+      const invalid = await api("/api/users/me", { method: "PATCH", token, body: { firstName: "   " } });
+      assert.equal(invalid.status, 400);
+      const forged = await api("/api/users/me", { method: "PATCH", token, body: { registrationComplete: true } });
+      assert.equal(forged.status, 400);
+      const updated = await api("/api/users/me", { method: "PATCH", token, body: { firstName: "  María José  " } });
+      assert.equal(updated.status, 200);
+      assert.equal(updated.body.user.firstName, "María José");
+      assert.equal(updated.body.user.registrationComplete, true);
+      assert.deepEqual(updated.body.user.missingRegistrationFields, []);
+      const current = await api("/api/users/me", { token });
+      assert.equal(current.status, 200);
+      assert.equal(current.body.user.registrationComplete, true);
+      const completed = await loginInstallation(phone);
+      assert.equal(completed.isNewUser, false);
+      assert.equal(completed.user.registrationComplete, true);
+      assert.equal(completed.user.id, login.user.id);
     });
 
     await network.test("logout revokes HTTP access, disconnects idle socket, and rejects reconnect", async () => {

@@ -22,7 +22,8 @@
     "migrate:latest": "npx knex migrate:latest",
     "migrate:rollback": "npx knex migrate:rollback",
     "seed:run": "npx knex seed:run",
-    "seed:make": "npx knex seed:make"
+    "seed:make": "npx knex seed:make",
+    "test:profiles:integration": "RUN_PROFILE_DB_TESTS=1 node --test tests/user-profile.integration.test.js"
   },
   "keywords": [],
   "author": "",

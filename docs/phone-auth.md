@@ -122,6 +122,37 @@ de configurar las variables.
 
    La respuesta 200 incluye `user`, `accessToken` (también `token` por compatibilidad),
    `refreshToken`, `expiresIn`, `refreshExpiresIn`, `rememberMe` e `isNewUser`.
+   El OTP exitoso crea la cuenta y entrega una sesión normal aunque no se haya
+   enviado nombre. Dentro de `user`, el backend informa:
+
+   ```json
+   {
+     "firstName": null,
+     "registrationComplete": false,
+     "missingRegistrationFields": ["firstName"]
+   }
+   ```
+
+   Flutter debe guardar la sesión y mostrar **Completa tu nombre** cuando
+   `user.registrationComplete` sea `false`, antes de navegar al inicio de la app.
+   Guardar el nombre mediante `PATCH /api/users/me` con
+   `{ "firstName": "María José" }`. La respuesta devuelve el usuario actualizado
+   con `registrationComplete: true` y `missingRegistrationFields: []`.
+   El apellido es opcional. Se reutiliza la validación existente: nombre no vacío
+   después de `trim`, máximo 100 caracteres.
+
+   El estado se calcula a partir del nombre guardado; no depende de `isNewUser`.
+   También está presente en `/api/auth/me`, `/api/users/me`, las respuestas de
+   refresh y las actualizaciones del perfil. Por tanto, Flutter debe comprobarlo
+   al restaurar una sesión, aunque `isNewUser` sea `false`. Una cuenta móvil
+   antigua sin nombre se representa igualmente como pendiente. Si el registro
+   OTP ya incluye nombre, se devuelve completo desde el inicio.
+
+   No hay token temporal de registro, migración adicional ni restricciones nuevas
+   sobre viajes u otros endpoints. La sesión es normal; la navegación obligatoria
+   hacia completar el nombre corresponde a Flutter. Los indicadores son de solo
+   lectura: no se deben enviar en `PATCH /api/users/me`.
+
    Usa los endpoints existentes `/api/auth/refresh`, `/logout` y `/logout-all`.
    Flutter debe proteger el refresh token en el almacenamiento seguro del sistema.
    No se reconoce un dispositivo por un identificador enviado por Flutter:

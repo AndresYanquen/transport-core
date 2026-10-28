@@ -1,13 +1,15 @@
 const PhoneAuth = require("../services/phone-auth.service");
 const { logger } = require("../../../config/logger");
 
-function handler(operation) {
+function handler(operation, changePhone = false) {
   return async (req, res) => {
     res.setHeader("Cache-Control", "no-store");
     try {
       const result = await PhoneAuth[operation](req.phoneAuthPayload, {
         ip: req.ip, userAgent: req.headers["user-agent"] || null,
         linkUser: req.user || null,
+        changePhone,
+        credentialVersion: req.credentialVersion,
       });
       return res.status(200).json(result);
     } catch (error) {
@@ -24,4 +26,4 @@ function handler(operation) {
   };
 }
 
-module.exports = { requestOtp: handler("requestOtp"), verifyOtp: handler("verifyOtp") };
+module.exports = { requestOtp: handler("requestOtp"), verifyOtp: handler("verifyOtp"), requestChangeOtp: handler("requestOtp", true), verifyChangeOtp: handler("verifyOtp", true) };

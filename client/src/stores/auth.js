@@ -126,6 +126,7 @@ export function useAuthStore() {
     isAuthenticated,
     isAdmin,
     isOperator,
+    applySession,
     login,
     logout,
     restore,

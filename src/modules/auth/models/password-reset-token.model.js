@@ -11,7 +11,7 @@ class PasswordResetTokenModel {
       const valid = token && await client.query(`SELECT used_at IS NULL AND expires_at > clock_timestamp() AS valid
         FROM password_reset_tokens WHERE token_hash = $1`, [tokenHash]);
       if (!valid?.rows[0]?.valid) { await client.query("ROLLBACK"); return false; }
-      const user = await client.query(`UPDATE users SET password_hash = $2, updated_at = clock_timestamp()
+      const user = await client.query(`UPDATE users SET password_hash = $2, security_version = security_version + 1, updated_at = clock_timestamp()
         WHERE id = $1 AND deleted_at IS NULL RETURNING id`, [token.user_id, passwordHash]);
       if (!user.rows.length) { await client.query("ROLLBACK"); return false; }
       await client.query("UPDATE password_reset_tokens SET used_at = clock_timestamp() WHERE token_hash = $1", [tokenHash]);

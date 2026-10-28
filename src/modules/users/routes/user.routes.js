@@ -14,6 +14,9 @@ const upload = multer({
   },
 });
 
+router.get("/me", authorizeRoles("client", "driver"), Controller.getProfile);
+router.patch("/me", authorizeRoles("client", "driver"), Controller.updateProfile);
+
 router.post(
   "/me/profile-image",
   authorizeRoles("client", "driver"),

@@ -24,14 +24,15 @@ function linkContext(metadata) {
   if (!["client", "driver"].includes(metadata.linkUser.role) || metadata.linkUser.status !== "active") {
     throw Object.assign(new Error("Phone linking is available for mobile accounts only."), { status: 403 });
   }
-  return { purpose: "link", targetUserId: metadata.linkUser.id };
+  return { purpose: metadata.changePhone ? "change" : "link", targetUserId: metadata.linkUser.id };
 }
 
 async function requestOtp({ phoneNumber, accountType = "client", deviceId, requestId }, metadata = {}) {
   SmsService.assertConfigured();
   validateContext({ deviceId, requestId }, true);
   const context = linkContext(metadata);
-  if (context.purpose === "link") accountType = metadata.linkUser.role;
+  if (context.purpose === "change" && !metadata.credentialVersion) throw Object.assign(new Error("Identity confirmation required."), { status: 401 });
+  if (context.purpose !== "auth") accountType = metadata.linkUser.role;
   // Service-level validation also protects internal callers.
   if (!["client", "driver"].includes(accountType)) {
     const error = new Error("accountType must be client or driver.");
@@ -54,6 +55,7 @@ async function requestOtp({ phoneNumber, accountType = "client", deviceId, reque
   const startedAt = Date.now();
   const code = crypto.randomInt(0, 1000000).toString().padStart(6, "0");
   const reservation = await OtpModel.reserve({ challengeId, requestId, phoneNumber: phone, accountType, ...context,
+    credentialVersion: metadata.credentialVersion || null,
     codeHash: hashCode(challengeId, phone, accountType, code, context.purpose, context.targetUserId),
     phoneKey: phoneKeyFor(phone), deviceKey: digest(`device:${deviceId.toLowerCase()}`),
     ipKey: digest(`ip:${ipGroup(metadata.ip)}`), config: env.phoneAuth });
@@ -83,7 +85,7 @@ async function verifyOtp({ challengeId, code, registration = {}, rememberMe = tr
   const installation = installationMetadata(deviceId, device);
   const context = linkContext(metadata);
   let replacedSessionIds = [];
-  const onMobileSessionCreated = (session) => { replacedSessionIds = session.replacedSessionIds || []; };
+  const onMobileSessionCreated = (session) => { replacedSessionIds.push(...(session.replacedSessionIds || [])); };
   const result = await OtpModel.verify({ challengeId, config: env.phoneAuth, ...context,
     deviceKey: digest(`device:${deviceId.toLowerCase()}`), ipKey: digest(`ip:${ipGroup(metadata.ip)}`), phoneKeyFor,
     codeMatches: (challenge) => {
@@ -96,15 +98,24 @@ async function verifyOtp({ challengeId, code, registration = {}, rememberMe = tr
       // No admin/operator lookup, role switching or registration profile updates on login.
       let user = await AuthModel.findMobileAccountByPhoneNumber(challenge.phone_number, null, transaction);
       let isNewUser = false;
-      if (context.purpose === "link") {
+      if (context.purpose !== "auth") {
         if (user && user.id !== context.targetUserId) return null;
-        // Attach to an authenticated account; never merge accounts or replace a verified number.
+        const locked = await transaction.query("SELECT * FROM users WHERE id = $1 FOR UPDATE", [context.targetUserId]);
+        if (context.purpose === "change" && (!locked.rows[0] || challenge.credential_version !== require("./identity-change.service").version(locked.rows[0]))) return null;
+        // Link initially or apply the protected, credential-bound change; never merge accounts.
         const linked = await transaction.query(`UPDATE users SET phone_number = $2, phone_verified = true,
           phone_verification_token = NULL, phone_verification_sent_at = NULL
           WHERE id = $1 AND role = $3 AND status = 'active' AND deleted_at IS NULL
-            AND (phone_number IS NULL OR phone_verified = false OR phone_number = $2) RETURNING id`,
-        [context.targetUserId, challenge.phone_number, challenge.account_type]);
+            AND ($4::boolean OR phone_number IS NULL OR phone_verified = false OR phone_number = $2) RETURNING id`,
+        [context.targetUserId, challenge.phone_number, challenge.account_type, context.purpose === "change"]);
         if (!linked.rows[0]) return null;
+        if (context.purpose === "change") {
+          const Identity = require("./identity-change.service");
+          const Model = require("../../users/models/user.model");
+          const revoked = await Identity.revoke(transaction, context.targetUserId, "phone_changed");
+          replacedSessionIds.push(...revoked);
+          await Model.audit(transaction, context.targetUserId, context.targetUserId, "phone_changed", ["phoneNumber"]);
+        }
         const linkedUser = await AuthModel.findById(context.targetUserId, transaction);
         const session = await AuthService.buildLoginSession(linkedUser, { rememberMe, metadata, transaction, mobileInstallation: installation, onMobileSessionCreated });
         return { ...session, isNewUser: false };

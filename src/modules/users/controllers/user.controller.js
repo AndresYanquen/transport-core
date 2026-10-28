@@ -18,7 +18,27 @@ async function deleteProfileImage(req, res, next) {
   }
 }
 
-module.exports = {
-  uploadProfileImage,
-  deleteProfileImage,
-};
+const UserService = require("../services/user.service");
+
+async function getProfile(req, res, next) {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.json(await UserService.getUser(req.user, req.params.userId || req.user.id));
+  } catch (error) { next(error); }
+}
+
+async function updateProfile(req, res, next) {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.json(await UserService.updateUser(req.user, req.params.userId || req.user.id, req.body));
+  } catch (error) { next(error); }
+}
+
+async function updateStatus(req, res, next) {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.json(await UserService.updateStatus(req.user, req.params.userId, req.body));
+  } catch (error) { next(error); }
+}
+
+module.exports = { uploadProfileImage, deleteProfileImage, getProfile, updateProfile, updateStatus };

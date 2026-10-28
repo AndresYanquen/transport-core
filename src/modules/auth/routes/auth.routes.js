@@ -24,4 +24,13 @@ router.post("/reset-password", validateAuth.resetPassword, AuthController.resetP
 router.post("/verify-email", validateAuth.verifyEmail, AuthController.verifyEmail);
 router.get("/me", authenticate, AuthController.me);
 
+const IdentityController = require("../controllers/identity-change.controller");
+const { authorizePhoneChange } = require("../middleware/identity-change.middleware");
+router.post("/reauth/email/request", authenticate, IdentityController.requestEmailProof);
+router.post("/reauth/email/verify", authenticate, IdentityController.verifyEmailProof);
+router.post("/email/change/request", authenticate, IdentityController.requestEmailChange);
+router.post("/email/change/verify", authenticate, IdentityController.verifyEmailChange);
+router.post("/change-password", authenticate, IdentityController.changePassword);
+router.post("/phone/change/request-otp", authenticate, validatePhoneAuth.requestOtp, authorizePhoneChange, PhoneAuthController.requestChangeOtp);
+router.post("/phone/change/verify-otp", authenticate, validatePhoneAuth.verifyOtp, PhoneAuthController.verifyChangeOtp);
 module.exports = router;

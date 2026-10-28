@@ -144,7 +144,7 @@ async function ensureGoogleProviderLink(userRow, providerUserId) {
   throw error;
 }
 
-function signAccessToken(user, { sessionId } = {}) {
+function signAccessToken(user, { sessionId, securityVersion = 0 } = {}) {
   const accessTokenExpiresInSeconds = env.security.jwtExpiresInSeconds;
 
   const accessToken = signJwt(
@@ -153,6 +153,7 @@ function signAccessToken(user, { sessionId } = {}) {
       role: user.role,
       email: user.email,
       type: "access",
+      cv: securityVersion,
       ...(sessionId ? { sid: sessionId } : {}),
     },
     {
@@ -200,7 +201,7 @@ async function buildLoginSession(userRow, {
     : userRow;
   const user = AuthModel.toPublicUser(updatedRow ?? userRow);
 
-  const signedAccessToken = signAccessToken(user, { sessionId: mobileSession?.id });
+  const signedAccessToken = signAccessToken(user, { sessionId: mobileSession?.id, securityVersion: (updatedRow ?? userRow).security_version || 0 });
   let resolvedRefreshToken = refreshToken;
   let resolvedRefreshExpiresIn = refreshExpiresIn;
 

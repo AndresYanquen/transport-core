@@ -53,7 +53,7 @@ async function slidingLimit(client, column, key, seconds, limit) {
 }
 
 async function reserve({ challengeId, requestId, phoneNumber, accountType, purpose = "auth", targetUserId = null,
-  codeHash, phoneKey, deviceKey, ipKey, config }) {
+  codeHash, phoneKey, deviceKey, ipKey, config, credentialVersion = null }) {
   const result = await transaction(async (client) => {
     // A shared lock serializes budget reservation, idempotency and dispatch decisions.
     // No provider call is made while holding the lock.
@@ -67,7 +67,7 @@ async function reserve({ challengeId, requestId, phoneNumber, accountType, purpo
     if (previous.rows[0]) {
       const row = previous.rows[0];
       if (row.phone_key !== phoneKey || row.device_key !== deviceKey || row.account_type !== accountType ||
-          row.purpose !== purpose || row.target_user_id !== targetUserId) {
+          row.purpose !== purpose || row.target_user_id !== targetUserId || row.credential_version !== credentialVersion) {
         throw Object.assign(new Error("Invalid verification request."), { status: 400 });
       }
       return { dispatch: false, challengeId: row.challenge_id, status: row.status, expiresIn: Number(row.expires_in) };
@@ -88,9 +88,9 @@ async function reserve({ challengeId, requestId, phoneNumber, accountType, purpo
       WHERE phone_key = $1 AND status IN ('pending', 'unknown') AND expires_at > clock_timestamp()`, [phoneKey]);
     if (Number(uncertain.rows[0].retry_after) > 0) throw limited(Number(uncertain.rows[0].retry_after));
     await client.query(`INSERT INTO auth_phone_sms_requests
-      (challenge_id, request_id, phone_key, device_key, ip_key, account_type, expires_at, created_at, purpose, target_user_id)
-      VALUES ($1, $2, $3, $4, $5, $6, clock_timestamp() + $7 * INTERVAL '1 second', clock_timestamp(), $8, $9)`,
-    [challengeId, requestId, phoneKey, deviceKey, ipKey, accountType, config.ttlSeconds, purpose, targetUserId]);
+      (challenge_id, request_id, phone_key, device_key, ip_key, account_type, expires_at, created_at, purpose, target_user_id, credential_version)
+      VALUES ($1, $2, $3, $4, $5, $6, clock_timestamp() + $7 * INTERVAL '1 second', clock_timestamp(), $8, $9, $10)`,
+    [challengeId, requestId, phoneKey, deviceKey, ipKey, accountType, config.ttlSeconds, purpose, targetUserId, credentialVersion]);
     await client.query(`
       INSERT INTO auth_phone_otps (phone_number, challenge_id, account_type, code_hash, expires_at, purpose, target_user_id)
       VALUES ($1, $2, $3, $4, clock_timestamp() + $5 * INTERVAL '1 second', $6, $7)
@@ -133,7 +133,7 @@ async function verify({ challengeId, deviceKey, purpose = "auth", targetUserId =
   return transaction(async (client) => {
     await takeLimit(client, `verify:ip:${ipKey}`, 900, 60);
     const { rows } = await client.query(`
-      SELECT otp.*, sms.device_key FROM auth_phone_otps otp
+      SELECT otp.*, sms.device_key, sms.credential_version FROM auth_phone_otps otp
       LEFT JOIN auth_phone_sms_requests sms USING (challenge_id)
       WHERE otp.challenge_id = $1 FOR UPDATE OF otp
     `, [challengeId]);

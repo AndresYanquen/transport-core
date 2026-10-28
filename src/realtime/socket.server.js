@@ -160,6 +160,7 @@ async function socketAuthMiddleware(socket, next) {
     if (!userRow) {
       return next(new Error("User linked to token no longer exists."));
     }
+    if ((payload.cv || 0) !== (userRow.security_version || 0)) return next(new Error("Credentials changed. Sign in again."));
     if (userRow.status !== "active") return next(new Error("User account is not active."));
     MobileSessions.assertAccessContext(userRow, payload);
     if (payload.sid) {
@@ -174,7 +175,17 @@ async function socketAuthMiddleware(socket, next) {
           socket.disconnect(true);
         }
       });
-    } else MobileSessions.assertAdditionalFactorPolicy(userRow);
+    } else {
+      MobileSessions.assertAdditionalFactorPolicy(userRow);
+      socket.use(async (_packet, proceed) => {
+        try {
+          verifyJwt(token, { secret: env.security.jwtSecret });
+          const current = await AuthModel.findById(payload.sub);
+          if (!current || current.status !== "active" || (payload.cv || 0) !== (current.security_version || 0)) throw new Error("Credentials changed.");
+          proceed();
+        } catch { proceed(new Error("Session is invalid or expired.")); socket.disconnect(true); }
+      });
+    }
 
     const user = AuthModel.toPublicUser(userRow);
 
@@ -228,15 +239,19 @@ function registerConnectionHandlers(io) {
 
     const { user } = socket.data;
     const { payload } = socket.data.auth;
-    if (payload.sid) {
-      socket.join(mobileSessionRoom(payload.sid));
+    {
+      if (payload.sid) socket.join(mobileSessionRoom(payload.sid));
       let checking = false;
       const interval = setInterval(async () => {
         if (checking) return;
         checking = true;
         try {
           verifyJwt(socket.data.auth.token, { secret: env.security.jwtSecret });
-          await MobileSessions.assertActive(payload.sid, user.id);
+          if (payload.sid) await MobileSessions.assertActive(payload.sid, user.id);
+          else {
+            const current = await AuthModel.findById(user.id);
+            if (!current || current.status !== "active" || (payload.cv || 0) !== (current.security_version || 0)) throw new Error("Credentials changed.");
+          }
         } catch { socket.disconnect(true); }
         finally { checking = false; }
       }, env.realtime.sessionCheckIntervalMs);

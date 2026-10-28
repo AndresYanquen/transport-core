@@ -7,6 +7,7 @@ const baseUserSelect = `
     u.email,
     u.username,
     u.password_hash,
+    u.security_version,
     u.first_name,
     u.last_name,
     u.phone_number,
@@ -636,6 +637,11 @@ class AuthModel {
 
   static toPublicUser(row) {
     if (!row) return null;
+    // Registration can finish after OTP account creation. Derive this from the
+    // saved name so it survives logout/refresh without a second token or flag.
+    const requiresName = ["client", "driver"].includes(row.role);
+    const hasFirstName = typeof row.first_name === "string" && row.first_name.trim().length > 0;
+    const registrationComplete = !requiresName || hasFirstName;
     const userProfile = row.profile ?? {};
     const userPreferences = userProfile?.preferences ?? {};
     const clientPreferredLanguage = userPreferences?.language ?? null;
@@ -686,6 +692,8 @@ class AuthModel {
       email: row.email,
       username: row.username,
       firstName: row.first_name,
+      registrationComplete,
+      missingRegistrationFields: registrationComplete ? [] : ["firstName"],
       lastName: row.last_name,
       phoneNumber: row.phone_number,
       role: row.role,

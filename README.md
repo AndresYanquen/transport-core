@@ -545,3 +545,7 @@ The codebase now includes a timeout job runner at [src/modules/rides/jobs/ride-t
    ```
 
 This keeps the module boundaries clear while avoiding intermediate registry files.
+
+### Edición de perfiles e identidad
+
+Consulta [el contrato y flujo de edición de usuarios](docs/user-profile-editing.md) para las nuevas rutas de perfil propio y administrativo, cambios verificados de correo/teléfono/contraseña, migración y pruebas.

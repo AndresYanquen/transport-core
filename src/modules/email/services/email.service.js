@@ -90,6 +90,7 @@ function setTransporterForTests(nextTransporter) {
 }
 
 module.exports = {
+  sendIdentityCodeEmail: ({ to, code }) => sendMail({ to, subject: "Confirma el cambio en tu cuenta GotTaxi", text: `Tu código es ${code}. Vence en 10 minutos. Si no solicitaste este cambio, ignora este correo.` }),
   isMailConfigured,
   sendPasswordResetEmail,
   sendEmailVerificationEmail,

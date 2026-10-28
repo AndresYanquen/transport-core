@@ -41,4 +41,9 @@ router.post(
   AdminUsersController.createUser
 );
 
+const UserController = require("../../users/controllers/user.controller");
+const { validateUserId } = require("../../users/middleware/user.middleware");
+router.get("/:userId", authorizeRoles("admin", "operator"), validateUserId, UserController.getProfile);
+router.patch("/:userId", authorizeRoles("admin"), validateUserId, UserController.updateProfile);
+router.patch("/:userId/status", authorizeRoles("admin"), validateUserId, UserController.updateStatus);
 module.exports = router;
